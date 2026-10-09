@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import datetime
+import pandas as pd
+import os
 
 # ----------------- Page Setup -----------------
 st.set_page_config(
@@ -9,6 +11,21 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+# ----------------- Helper: Load Tenant Database -----------------
+@st.cache_data(ttl=60)  # Re-checks GitHub file every 60 seconds
+def load_tenant_roster():
+    csv_file = "tenants.csv"
+    if os.path.exists(csv_file):
+        try:
+            df = pd.read_csv(csv_file)
+            df["email_clean"] = df["email"].astype(str).str.strip().str.lower()
+            return df
+        except Exception:
+            return pd.DataFrame(columns=["email", "name", "property", "unit", "email_clean"])
+    else:
+        # Default fallback if file is not yet committed
+        return pd.DataFrame(columns=["email", "name", "property", "unit", "email_clean"])
 
 # ----------------- Global Design Styling (Fintech Theme) -----------------
 st.markdown(
@@ -19,8 +36,6 @@ st.markdown(
             color: #0F172A;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
-
-        /* Nav Container */
         .nav-container {
             display: flex;
             justify-content: space-between;
@@ -31,13 +46,7 @@ st.markdown(
             border-radius: 10px;
             margin-bottom: 24px;
         }
-        .nav-logo {
-            font-size: 20px;
-            font-weight: 800;
-            color: #0F172A;
-        }
-
-        /* Cards & Surfaces */
+        .nav-logo { font-size: 20px; font-weight: 800; color: #0F172A; }
         .white-card {
             background: #FFFFFF;
             border: 1px solid #E2E8F0;
@@ -57,8 +66,6 @@ st.markdown(
         .kpi-value { font-size: 28px; font-weight: 800; color: #0F172A; }
         .kpi-green { color: #059669; }
         .kpi-sub { font-size: 12px; color: #94A3B8; margin-top: 4px; }
-
-        /* Trust Badge */
         .trust-badge {
             display: inline-block;
             background-color: #EFF6FF;
@@ -70,8 +77,6 @@ st.markdown(
             margin-bottom: 14px;
             border: 1px solid #DBEAFE;
         }
-
-        /* Results Card */
         .results-box {
             background: #F0FDF4;
             border: 1px solid #BBF7D0;
@@ -79,8 +84,6 @@ st.markdown(
             padding: 16px;
             margin-top: 14px;
         }
-
-        /* Progress Bar Custom Container */
         .progress-label {
             display: flex;
             justify-content: space-between;
@@ -91,8 +94,6 @@ st.markdown(
             margin-bottom: 4px;
         }
         .sub-desc { font-size: 12px; color: #64748B; margin-bottom: 6px; }
-
-        /* Step Card */
         .step-card {
             background: #FFFFFF;
             border: 1px solid #E2E8F0;
@@ -101,8 +102,6 @@ st.markdown(
             box-shadow: 0 1px 3px rgba(0,0,0,0.04);
             height: 100%;
         }
-
-        /* Footer */
         .site-footer {
             background-color: #0F172A;
             color: #94A3B8;
@@ -122,23 +121,19 @@ if "user_cohort" not in st.session_state:
     st.session_state["user_cohort"] = None
 if "user_email" not in st.session_state:
     st.session_state["user_email"] = ""
+if "tenant_info" not in st.session_state:
+    st.session_state["tenant_info"] = None
 if "active_view" not in st.session_state:
     st.session_state["active_view"] = "landing"
 
-# ----------------- Passwordless Login Modal / Dialog -----------------
+# ----------------- Passwordless Login Modal with Automatic Routing -----------------
 @st.dialog("Log In / Sign Up")
 def login_dialog():
     st.markdown("### Welcome back!")
     st.markdown("Enter your email address to access your secure portal.")
     
     email = st.text_input("Email Address", placeholder="name@domain.com")
-    cohort = st.radio(
-        "Select Portal Type:",
-        ["Cost Segregation Investor", "Tenant / Property Portal"],
-        horizontal=True
-    )
     
-    # Passwordless flow (One-Time Verification Code)
     if "otp_sent" not in st.session_state:
         st.session_state["otp_sent"] = False
         
@@ -146,27 +141,43 @@ def login_dialog():
         if st.button("Send One-Time Code", type="primary", use_container_width=True):
             if email and "@" in email:
                 st.session_state["otp_sent"] = True
-                st.session_state["temp_email"] = email
-                st.session_state["temp_cohort"] = cohort
-                st.success("Verification code sent to your email! (For testing, use code: 123456)")
+                st.session_state["temp_email"] = email.strip().lower()
+                st.success("Verification code sent! (For instant testing, use code: 123456)")
                 st.rerun()
             else:
                 st.error("Please enter a valid email address.")
     else:
-        st.info(f"Verification code sent to {st.session_state.get('temp_email')}")
+        st.info(f"Verification code sent to **{st.session_state.get('temp_email')}**")
         code = st.text_input("6-Digit Code", placeholder="123456", max_chars=6)
         c1, c2 = st.columns(2)
         with c1:
             if st.button("Verify & Sign In", type="primary", use_container_width=True):
-                # Demo verification check
                 if code == "123456" or len(code) == 6:
+                    cleaned_email = st.session_state["temp_email"]
                     st.session_state["logged_in"] = True
-                    st.session_state["user_email"] = st.session_state["temp_email"]
-                    st.session_state["user_cohort"] = st.session_state["temp_cohort"]
-                    st.session_state["active_view"] = (
-                        "costseg_dashboard" if "Investor" in st.session_state["temp_cohort"] else "tenant_portal"
-                    )
+                    st.session_state["user_email"] = cleaned_email
                     st.session_state["otp_sent"] = False
+                    
+                    # Check against tenant roster
+                    roster_df = load_tenant_roster()
+                    match = roster_df[roster_df["email_clean"] == cleaned_email]
+                    
+                    if not match.empty:
+                        # Matched a tenant -> automatically route to Tenant Portal
+                        tenant_row = match.iloc[0]
+                        st.session_state["user_cohort"] = "tenant"
+                        st.session_state["tenant_info"] = {
+                            "name": tenant_row.get("name", "Resident"),
+                            "property": tenant_row.get("property", "Primary Residence"),
+                            "unit": tenant_row.get("unit", "")
+                        }
+                        st.session_state["active_view"] = "tenant_portal"
+                    else:
+                        # Not a tenant -> automatically route to Cost Segregation Dashboard
+                        st.session_state["user_cohort"] = "investor"
+                        st.session_state["tenant_info"] = None
+                        st.session_state["active_view"] = "costseg_dashboard"
+                    
                     st.rerun()
                 else:
                     st.error("Invalid code. Please try 123456.")
@@ -183,18 +194,16 @@ with nav_left:
 
 with nav_mid:
     if st.session_state["logged_in"]:
-        sub_c1, sub_c2, sub_c3 = st.columns(3)
+        sub_c1, sub_c2 = st.columns(2)
         with sub_c1:
             if st.button("Public Home", use_container_width=True):
                 st.session_state["active_view"] = "landing"
                 st.rerun()
         with sub_c2:
-            if st.button("Cost Seg Portal", use_container_width=True):
-                st.session_state["active_view"] = "costseg_dashboard"
-                st.rerun()
-        with sub_c3:
-            if st.button("Tenant Portal", use_container_width=True):
-                st.session_state["active_view"] = "tenant_portal"
+            target_portal = "My Property Portal" if st.session_state["user_cohort"] == "tenant" else "My Cost Seg Portfolio"
+            target_view = "tenant_portal" if st.session_state["user_cohort"] == "tenant" else "costseg_dashboard"
+            if st.button(target_portal, use_container_width=True):
+                st.session_state["active_view"] = target_view
                 st.rerun()
 
 with nav_right:
@@ -202,18 +211,121 @@ with nav_right:
         if st.button("Log In / Sign Up", type="primary", use_container_width=True):
             login_dialog()
     else:
-        st.caption(f"Signed in as: **{st.session_state['user_email']}**")
+        st.caption(f"Signed in: **{st.session_state['user_email']}**")
         if st.button("Sign Out", use_container_width=True):
             st.session_state["logged_in"] = False
             st.session_state["user_email"] = ""
+            st.session_state["user_cohort"] = None
+            st.session_state["tenant_info"] = None
             st.session_state["active_view"] = "landing"
             st.rerun()
 
 # ==============================================================================
-# VIEW 1: COST SEGREGATION INVESTOR DASHBOARD (Matches Screenshot 2)
+# VIEW 1: RESIDENT / TENANT PORTAL (Auto-routed if email in tenants.csv)
 # ==============================================================================
-if st.session_state["active_view"] == "costseg_dashboard":
-    # Top Action Bar
+if st.session_state["active_view"] == "tenant_portal":
+    t_info = st.session_state.get("tenant_info") or {"name": "Resident", "property": "Property", "unit": ""}
+    
+    st.markdown(
+        f"""
+        <div style="background: linear-gradient(135deg, #DCFCE7 0%, #E0F2FE 100%); padding: 32px; border-radius: 12px; margin-bottom: 24px;">
+            <h1 style="color:#0F172A; margin:0;">Welcome, {t_info['name']}!</h1>
+            <p style="color:#334155; margin-top:6px; font-size:15px;">
+                Resident Portal for <b>{t_info['property']} {f'({t_info["unit"]})' if t_info['unit'] else ''}</b>
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    t_c1, t_c2, t_c3 = st.columns(3)
+    with t_c1:
+        st.markdown(
+            """
+            <div class="white-card">
+                <h4 style="margin:0; color:#0F172A;">🛠️ Request Maintenance</h4>
+                <div style="font-size:12px; color:#64748B; margin-top:4px;">Submit a new maintenance or repair request</div>
+            </div>
+            """, unsafe_allow_html=True
+        )
+    with t_c2:
+        st.markdown(
+            """
+            <div class="white-card">
+                <h4 style="margin:0; color:#0F172A;">📄 Lease Documents</h4>
+                <div style="font-size:12px; color:#64748B; margin-top:4px;">View signed lease and addendums</div>
+            </div>
+            """, unsafe_allow_html=True
+        )
+    with t_c3:
+        st.markdown(
+            """
+            <div class="white-card">
+                <h4 style="margin:0; color:#0F172A;">🚨 Emergency Contacts</h4>
+                <div style="font-size:12px; color:#64748B; margin-top:4px;">24/7 building management dispatch</div>
+            </div>
+            """, unsafe_allow_html=True
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    f_left, f_mid, f_right = st.columns([0.5, 2, 0.5])
+
+    with f_mid:
+        st.markdown('<div class="white-card">', unsafe_allow_html=True)
+        st.markdown("### Submit Maintenance Request")
+        m_cat = st.selectbox("Category", ["Plumbing", "HVAC / Heating & AC", "Electrical", "Appliances", "Roof / Exterior", "Other"])
+        m_pri = st.selectbox("Priority", ["Low (General Inquiry)", "Medium (Standard Repair)", "High (Urgent, No Hot Water)", "Emergency (Active Flood/Leak)"])
+        m_desc = st.text_area("Description", placeholder="Describe the issue in detail...")
+        m_photo = st.file_uploader("Upload a photo (optional)", type=["jpg", "png", "jpeg"])
+        
+        if st.button("Submit Request", type="primary", use_container_width=True):
+            if m_desc:
+                st.success(f"Maintenance ticket submitted for {t_info['property']} {t_info['unit']}! Ticket ID #TK-8492")
+            else:
+                st.warning("Please provide a description of the issue.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # Preferred Contractors Section
+    st.markdown("### Preferred Local Contractors")
+    pc1, pc2, pc3 = st.columns(3)
+    with pc1:
+        st.markdown(
+            """
+            <div class="white-card">
+                <span style="background:#EFF6FF; color:#1D4ED8; font-size:10px; font-weight:700; padding:2px 8px; border-radius:4px;">HVAC Partner</span>
+                <h4 style="margin:8px 0 4px 0;">Capital Climate Pros</h4>
+                <div style="font-size:13px; color:#475569;">Specialized heating, AC, and duct servicing.</div>
+                <div style="font-size:13px; color:#2563EB; margin-top:8px;">(202) 555-0192</div>
+            </div>
+            """, unsafe_allow_html=True
+        )
+    with pc2:
+        st.markdown(
+            """
+            <div class="white-card">
+                <span style="background:#F0FDF4; color:#15803D; font-size:10px; font-weight:700; padding:2px 8px; border-radius:4px;">Plumbing</span>
+                <h4 style="margin:8px 0 4px 0;">BlueFlow Emergency Plumbing</h4>
+                <div style="font-size:13px; color:#475569;">24/7 burst pipe, drain cleaning, and water heater repair.</div>
+                <div style="font-size:13px; color:#2563EB; margin-top:8px;">(202) 555-0143</div>
+            </div>
+            """, unsafe_allow_html=True
+        )
+    with pc3:
+        st.markdown(
+            """
+            <div class="white-card">
+                <span style="background:#FEF3C7; color:#B45309; font-size:10px; font-weight:700; padding:2px 8px; border-radius:4px;">Locksmith</span>
+                <h4 style="margin:8px 0 4px 0;">SafeKey Rapid Response</h4>
+                <div style="font-size:13px; color:#475569;">Key replacement and lock repairs.</div>
+                <div style="font-size:13px; color:#2563EB; margin-top:8px;">(202) 555-0188</div>
+            </div>
+            """, unsafe_allow_html=True
+        )
+
+# ==============================================================================
+# VIEW 2: COST SEGREGATION INVESTOR DASHBOARD (Auto-routed for all other users)
+# ==============================================================================
+elif st.session_state["active_view"] == "costseg_dashboard":
     dash_top1, dash_top2, dash_top3 = st.columns([2, 1.2, 0.8])
     with dash_top1:
         st.markdown("## Cost Segregation Portfolio")
@@ -228,7 +340,7 @@ if st.session_state["active_view"] == "costseg_dashboard":
         if st.button("+ New Study", type="primary", use_container_width=True):
             st.toast("Opening new segregation study workflow...")
 
-    # 4 Executive KPI Cards Row
+    # 4 Executive KPI Cards
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     with kpi1:
         st.markdown(
@@ -272,8 +384,6 @@ if st.session_state["active_view"] == "costseg_dashboard":
         )
 
     st.markdown("<br>", unsafe_allow_html=True)
-
-    # Split Panel: Asset Class Allocations vs. Tax Benefit Comparison
     col_alloc, col_benefit = st.columns([1.2, 0.8], gap="large")
 
     with col_alloc:
@@ -281,30 +391,21 @@ if st.session_state["active_view"] == "costseg_dashboard":
             """
             <div class="white-card">
                 <h3 style="margin-top:0; color:#0F172A;">Asset Life Class Allocations</h3>
-                
                 <div class="progress-label"><span>5-Year Personal Property</span><span>20%</span></div>
                 <div class="sub-desc">Specialty electrical, decorative lighting, removable flooring</div>
-                <div style="background:#E2E8F0; border-radius:4px; height:8px;">
-                    <div style="background:#10B981; width:20%; height:8px; border-radius:4px;"></div>
-                </div>
+                <div style="background:#E2E8F0; border-radius:4px; height:8px;"><div style="background:#10B981; width:20%; height:8px; border-radius:4px;"></div></div>
 
                 <div class="progress-label" style="margin-top:16px;"><span>7-Year Personal Property</span><span>10%</span></div>
                 <div class="sub-desc">Office furniture, specialized equipment</div>
-                <div style="background:#E2E8F0; border-radius:4px; height:8px;">
-                    <div style="background:#3B82F6; width:10%; height:8px; border-radius:4px;"></div>
-                </div>
+                <div style="background:#E2E8F0; border-radius:4px; height:8px;"><div style="background:#3B82F6; width:10%; height:8px; border-radius:4px;"></div></div>
 
                 <div class="progress-label" style="margin-top:16px;"><span>15-Year Land Improvements</span><span>15%</span></div>
                 <div class="sub-desc">Paving, site utilities, fencing, exterior signage</div>
-                <div style="background:#E2E8F0; border-radius:4px; height:8px;">
-                    <div style="background:#F59E0B; width:15%; height:8px; border-radius:4px;"></div>
-                </div>
+                <div style="background:#E2E8F0; border-radius:4px; height:8px;"><div style="background:#F59E0B; width:15%; height:8px; border-radius:4px;"></div></div>
 
                 <div class="progress-label" style="margin-top:16px;"><span>27.5 / 39-Year Building Basis</span><span>55%</span></div>
                 <div class="sub-desc">Straight-line residual structural core</div>
-                <div style="background:#E2E8F0; border-radius:4px; height:8px;">
-                    <div style="background:#64748B; width:55%; height:8px; border-radius:4px;"></div>
-                </div>
+                <div style="background:#E2E8F0; border-radius:4px; height:8px;"><div style="background:#64748B; width:55%; height:8px; border-radius:4px;"></div></div>
             </div>
             """, unsafe_allow_html=True
         )
@@ -338,7 +439,6 @@ if st.session_state["active_view"] == "costseg_dashboard":
             """, unsafe_allow_html=True
         )
 
-    # Active Properties & Studies Table
     st.markdown("### Active Properties & Studies")
     studies_data = [
         {"Property": "123 Innovation Pkwy, Reston VA", "Placed in Service": "2024-03-15", "Basis": "$1,200,000", "Reallocated": "$420,000", "Status": "Completed"},
@@ -354,111 +454,9 @@ if st.session_state["active_view"] == "costseg_dashboard":
         st.button("Download Final Certified PDF Report", type="primary")
 
 # ==============================================================================
-# VIEW 2: TENANT / PROPERTY PORTAL (Matches Screenshot 1)
-# ==============================================================================
-elif st.session_state["active_view"] == "tenant_portal":
-    st.markdown(
-        """
-        <div style="background: linear-gradient(135deg, #DCFCE7 0%, #E0F2FE 100%); padding: 32px; border-radius: 12px; margin-bottom: 24px;">
-            <h1 style="color:#0F172A; margin:0;">Resident Property Portal</h1>
-            <p style="color:#334155; margin-top:6px; font-size:15px;">Manage maintenance requests, lease documents, and contractor support.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # 3 Top Quick-Action Cards
-    t_c1, t_c2, t_c3 = st.columns(3)
-    with t_c1:
-        st.markdown(
-            """
-            <div class="white-card">
-                <h4 style="margin:0; color:#0F172A;">🛠️ Request Maintenance</h4>
-                <div style="font-size:12px; color:#64748B; margin-top:4px;">Submit a new maintenance or repair request</div>
-            </div>
-            """, unsafe_allow_html=True
-        )
-    with t_c2:
-        st.markdown(
-            """
-            <div class="white-card">
-                <h4 style="margin:0; color:#0F172A;">📄 Lease Documents</h4>
-                <div style="font-size:12px; color:#64748B; margin-top:4px;">View signed lease, addendums, and community rules</div>
-            </div>
-            """, unsafe_allow_html=True
-        )
-    with t_c3:
-        st.markdown(
-            """
-            <div class="white-card">
-                <h4 style="margin:0; color:#0F172A;">🚨 Emergency Contacts</h4>
-                <div style="font-size:12px; color:#64748B; margin-top:4px;">24/7 building management and utility dispatch</div>
-            </div>
-            """, unsafe_allow_html=True
-        )
-
-    # Centered Maintenance Request Form
-    st.markdown("<br>", unsafe_allow_html=True)
-    f_left, f_mid, f_right = st.columns([0.5, 2, 0.5])
-
-    with f_mid:
-        st.markdown('<div class="white-card">', unsafe_allow_html=True)
-        st.markdown("### Request Maintenance")
-        
-        m_cat = st.selectbox("Category", ["Plumbing", "HVAC / Heating & AC", "Electrical", "Appliances", "Roof / Exterior", "Other"])
-        m_pri = st.selectbox("Priority", ["Low (General Inquiry)", "Medium (Standard Repair)", "High (Urgent, No Hot Water)", "Emergency (Active Flood/Leak)"])
-        m_desc = st.text_area("Description", placeholder="Describe the issue in detail...")
-        m_photo = st.file_uploader("Upload a photo (optional)", type=["jpg", "png", "jpeg"])
-        
-        if st.button("Submit Request", type="primary", use_container_width=True):
-            if m_desc:
-                st.success("Maintenance ticket submitted successfully! Dispatch ticket ID #TK-8492")
-            else:
-                st.warning("Please provide a description of the issue.")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # Preferred Contractors Section
-    st.markdown("### Preferred Local Contractors")
-    pc1, pc2, pc3 = st.columns(3)
-    with pc1:
-        st.markdown(
-            """
-            <div class="white-card">
-                <span style="background:#EFF6FF; color:#1D4ED8; font-size:10px; font-weight:700; padding:2px 8px; border-radius:4px;">HVAC Partner</span>
-                <h4 style="margin:8px 0 4px 0;">Capital Climate Pros</h4>
-                <div style="font-size:13px; color:#475569;">Specialized heating, AC, and duct servicing.</div>
-                <div style="font-size:13px; color:#2563EB; margin-top:8px;">(202) 555-0192 • info@capitalclimate.com</div>
-            </div>
-            """, unsafe_allow_html=True
-        )
-    with pc2:
-        st.markdown(
-            """
-            <div class="white-card">
-                <span style="background:#F0FDF4; color:#15803D; font-size:10px; font-weight:700; padding:2px 8px; border-radius:4px;">Plumbing</span>
-                <h4 style="margin:8px 0 4px 0;">BlueFlow Emergency Plumbing</h4>
-                <div style="font-size:13px; color:#475569;">24/7 burst pipe, drain cleaning, and water heater repair.</div>
-                <div style="font-size:13px; color:#2563EB; margin-top:8px;">(202) 555-0143 • service@blueflow.com</div>
-            </div>
-            """, unsafe_allow_html=True
-        )
-    with pc3:
-        st.markdown(
-            """
-            <div class="white-card">
-                <span style="background:#FEF3C7; color:#B45309; font-size:10px; font-weight:700; padding:2px 8px; border-radius:4px;">Locksmith</span>
-                <h4 style="margin:8px 0 4px 0;">SafeKey Rapid Response</h4>
-                <div style="font-size:13px; color:#475569;">Key replacement, lock repairs, and smart lock reprogramming.</div>
-                <div style="font-size:13px; color:#2563EB; margin-top:8px;">(202) 555-0188 • help@safekey.com</div>
-            </div>
-            """, unsafe_allow_html=True
-        )
-
-# ==============================================================================
 # VIEW 3: PUBLIC LANDING PAGE (Default Home View)
 # ==============================================================================
 else:
-    # Split Hero Section
     h_col1, h_col2 = st.columns([1.1, 0.9], gap="large")
 
     with h_col1:
@@ -487,7 +485,6 @@ else:
         st.markdown('<div class="white-card">', unsafe_allow_html=True)
         st.markdown("<h3 style='text-align:center; margin-top:0;'>Instant Savings Estimate</h3>", unsafe_allow_html=True)
 
-        # 100% Free Photon OpenStreetMap Address Autocomplete
         search_query = st.text_input("Property Address", placeholder="Start typing address...")
         selected_address = search_query
 
