@@ -15,7 +15,7 @@ st.set_page_config(
 
 # ----------------- Email Sender via Resend API -----------------
 def send_real_email_code(recipient_email, code):
-    """Sends the 6-digit code from info@taxflowcostseg.com using your Resend API key."""
+    """Sends authentic 6-digit code from info@taxflowcostseg.com using Resend."""
     api_key = st.secrets.get("RESEND_API_KEY")
     if not api_key:
         return False, "DEMO_MODE"
@@ -169,8 +169,10 @@ if "generated_code" not in st.session_state:
     st.session_state["generated_code"] = ""
 if "temp_email" not in st.session_state:
     st.session_state["temp_email"] = ""
+if "show_login_dialog" not in st.session_state:
+    st.session_state["show_login_dialog"] = False
 
-# ----------------- Passwordless Login Modal -----------------
+# ----------------- Persistent Login Dialog -----------------
 @st.dialog("Log In / Sign Up")
 def login_dialog():
     st.markdown("### Access Your Portal")
@@ -194,7 +196,7 @@ def login_dialog():
             else:
                 st.error("Please enter a valid email address.")
 
-    # Step 2: Enter Code (Popup stays open here)
+    # Step 2: Enter Code
     elif st.session_state["otp_step"] == "enter_code":
         st.info(f"Verification code sent to **{st.session_state['temp_email']}**")
 
@@ -211,6 +213,7 @@ def login_dialog():
                     st.session_state["logged_in"] = True
                     st.session_state["user_email"] = cleaned_email
                     st.session_state["otp_step"] = "input_email"
+                    st.session_state["show_login_dialog"] = False
 
                     # Check against tenant roster
                     roster_df = load_tenant_roster()
@@ -239,6 +242,10 @@ def login_dialog():
                 st.session_state["otp_step"] = "input_email"
                 st.rerun()
 
+# Check if modal should be open
+if st.session_state["show_login_dialog"] and not st.session_state["logged_in"]:
+    login_dialog()
+
 # ----------------- Top Navigation Bar -----------------
 nav_left, nav_mid, nav_right = st.columns([1.5, 2, 1.2])
 
@@ -262,7 +269,9 @@ with nav_mid:
 with nav_right:
     if not st.session_state["logged_in"]:
         if st.button("Log In / Sign Up", type="primary", use_container_width=True):
-            login_dialog()
+            st.session_state["show_login_dialog"] = True
+            st.session_state["otp_step"] = "input_email"
+            st.rerun()
     else:
         st.caption(f"Signed in: **{st.session_state['user_email']}**")
         if st.button("Sign Out", use_container_width=True):
@@ -338,7 +347,6 @@ if st.session_state["active_view"] == "tenant_portal":
                 st.warning("Please provide a description of the issue.")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # Preferred Contractors Section
     st.markdown("### Preferred Local Contractors")
     pc1, pc2, pc3 = st.columns(3)
     with pc1:
