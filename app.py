@@ -13,9 +13,16 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# ----------------- Video Modal Dialog -----------------
+@st.dialog("Why Cost Segregation? (90-Second Explainer)")
+def video_dialog():
+    st.markdown("Discover how accelerated depreciation can save you 20% to 40% on your real estate taxes in Year 1.")
+    st.video("https://youtu.be/O2Icd-i_Ixw")
+    st.caption("Led by PhD Professional Engineers • 100% IRS Audit-Tested Methodologies")
+
 # ----------------- Email Sender via Resend API -----------------
 def send_real_email_code(recipient_email, code):
-    """Sends authentic 6-digit code with high deliverability (HTML + Plaintext)."""
+    """Sends authentic 6-digit code from info@taxflowcostseg.com using Resend."""
     api_key = st.secrets.get("RESEND_API_KEY")
     if not api_key:
         return False, "DEMO_MODE"
@@ -25,46 +32,23 @@ def send_real_email_code(recipient_email, code):
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
-    
-    # Plain text version for spam filters
-    plain_text = f"Your Tax Flow Cost Seg one-time verification code is: {code}\n\nThis code expires in 10 minutes.\n\nTax Flow Cost Seg | info@taxflowcostseg.com"
-
-    # HTML version
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #F8FAFC; padding: 24px; margin: 0;">
-        <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 520px; background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 32px;">
-            <tr>
-                <td>
-                    <h2 style="color: #0F172A; margin-top: 0; font-size: 20px;">Tax Flow Cost Seg</h2>
-                    <p style="color: #475569; font-size: 15px; line-height: 24px;">Your one-time verification code to access your portal is:</p>
-                    <div style="background-color: #F1F5F9; border-radius: 8px; padding: 18px; text-align: center; margin: 24px 0;">
-                        <span style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #0F172A;">{code}</span>
-                    </div>
-                    <p style="color: #64748B; font-size: 13px; line-height: 20px;">
-                        This code expires in 10 minutes. If you did not request this login code, you can safely disregard this message.
-                    </p>
-                    <hr style="border: 0; border-top: 1px solid #E2E8F0; margin: 24px 0;">
-                    <p style="color: #94A3B8; font-size: 11px; margin-bottom: 0;">
-                        Tax Flow Cost Seg • Engineering-Led Cost Segregation Studies<br>
-                        Contact: info@taxflowcostseg.com | (202) 810-1684
-                    </p>
-                </td>
-            </tr>
-        </table>
-    </body>
-    </html>
-    """
-
     payload = {
         "from": "Tax Flow Cost Seg <info@taxflowcostseg.com>",
         "to": [recipient_email],
-        "subject": f"{code} is your Tax Flow verification code",
-        "text": plain_text,
-        "html": html_content
+        "subject": f"{code} is your login verification code",
+        "html": f"""
+        <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #E2E8F0; border-radius: 12px; background-color: #FFFFFF;">
+            <h2 style="color: #0F172A; margin-top: 0;">Tax Flow Cost Seg</h2>
+            <p style="color: #475569; font-size: 15px;">Your one-time verification code to access your portal is:</p>
+            <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 8px; padding: 18px; text-align: center; margin: 24px 0;">
+                <span style="font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #0F172A;">{code}</span>
+            </div>
+            <p style="color: #94A3B8; font-size: 12px; line-height: 1.5;">
+                This code expires in 10 minutes. If you did not request this login code, please disregard this email.
+            </p>
+        </div>
+        """
     }
-    
     try:
         r = requests.post(url, json=payload, headers=headers, timeout=5)
         if r.status_code in [200, 201]:
@@ -73,7 +57,6 @@ def send_real_email_code(recipient_email, code):
             return False, f"Resend Error: {r.text}"
     except Exception as e:
         return False, f"Request Error: {str(e)}"
-
 
 # ----------------- Helper: Load Tenant Database -----------------
 @st.cache_data(ttl=60)
@@ -564,7 +547,8 @@ else:
                 st.session_state["active_view"] = "costseg_dashboard"
                 st.rerun()
         with b_c2:
-            st.button("▷ Watch 90-Second Video", use_container_width=True)
+            if st.button("▷ Watch 90-Second Video", use_container_width=True):
+                video_dialog()
 
     with h_col2:
         st.markdown('<div class="white-card">', unsafe_allow_html=True)
