@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import requests
 import datetime
 import pandas as pd
@@ -13,19 +14,14 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ----------------- Video Modal Dialog -----------------
-@st.dialog("Why Cost Segregation? (90-Second Explainer)")
+# ----------------- 1. Large Screen Video Modal (Clean, No Header/Caption) -----------------
+@st.dialog(" ", width="large")
 def video_dialog():
-    st.markdown("Discover how accelerated depreciation can save you 20% to 40% on your real estate taxes in Year 1.")
     st.video("https://youtu.be/O2Icd-i_Ixw")
-    st.caption("Led by PhD Professional Engineers • 100% IRS Audit-Tested Methodologies")
 
-# ----------------- Property Data Fetcher (Free Tier / Fallback) -----------------
+# ----------------- Property Data Fetcher & State Synchronizer -----------------
 def fetch_property_specs(address_str):
-    """
-    Attempts to fetch real property specs (SqFt, Year Built, Value) using RentCast API.
-    If no API key is provided, generates realistic baseline specs so the estimator works seamlessly.
-    """
+    """Fetches specs via RentCast API or generates realistic estimates."""
     rentcast_key = st.secrets.get("RENTCAST_API_KEY")
     if rentcast_key and len(address_str) > 6:
         try:
@@ -38,16 +34,16 @@ def fetch_property_specs(address_str):
                 if data and len(data) > 0:
                     p = data[0]
                     return {
-                        "price": p.get("lastSalePrice") or p.get("assessedValue") or 1150000,
-                        "sqft": p.get("squareFootage") or 3200,
-                        "year_built": p.get("yearBuilt") or 2018,
-                        "prop_type": p.get("propertyType") or "Residential / Multi-Family",
+                        "price": int(p.get("lastSalePrice") or p.get("assessedValue") or 1250000),
+                        "sqft": p.get("squareFootage") or 3400,
+                        "year_built": p.get("yearBuilt") or 2019,
+                        "prop_type": p.get("propertyType") or "Commercial / Multi-Family",
                         "source": "RentCast Live Data"
                     }
         except Exception:
             pass
 
-    # Intelligent baseline heuristic when API key isn't active
+    # Intelligent baseline when API key is not active
     return {
         "price": 1250000,
         "sqft": 3400,
@@ -58,41 +54,34 @@ def fetch_property_specs(address_str):
 
 # ----------------- Email Sender via Resend API -----------------
 def send_real_email_code(recipient_email, code):
-    """Sends authentic 6-digit code from info@taxflowcostseg.com using Resend."""
     api_key = st.secrets.get("RESEND_API_KEY")
     if not api_key:
         return False, "DEMO_MODE"
 
     url = "https://api.resend.com/emails"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    plain_text = f"Your Tax Flow Cost Seg verification code is: {code}\n\nExpires in 10 minutes."
+    html_content = f"""
+    <div style="font-family: sans-serif; max-width: 500px; padding: 24px; border: 1px solid #E2E8F0; border-radius: 12px;">
+        <h2 style="color: #0F172A;">Tax Flow Cost Seg</h2>
+        <p style="color: #475569;">Your one-time login code is:</p>
+        <div style="background:#F1F5F9; border-radius:8px; padding:16px; text-align:center; font-size:32px; font-weight:800; letter-spacing:6px; color:#0F172A;">
+            {code}
+        </div>
+    </div>
+    """
     payload = {
         "from": "Tax Flow Cost Seg <info@taxflowcostseg.com>",
         "to": [recipient_email],
-        "subject": f"{code} is your login verification code",
-        "html": f"""
-        <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #E2E8F0; border-radius: 12px; background-color: #FFFFFF;">
-            <h2 style="color: #0F172A; margin-top: 0;">Tax Flow Cost Seg</h2>
-            <p style="color: #475569; font-size: 15px;">Your one-time verification code to access your portal is:</p>
-            <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 8px; padding: 18px; text-align: center; margin: 24px 0;">
-                <span style="font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #0F172A;">{code}</span>
-            </div>
-            <p style="color: #94A3B8; font-size: 12px; line-height: 1.5;">
-                This code expires in 10 minutes. If you did not request this login code, please disregard this email.
-            </p>
-        </div>
-        """
+        "subject": f"{code} is your Tax Flow verification code",
+        "text": plain_text,
+        "html": html_content
     }
     try:
         r = requests.post(url, json=payload, headers=headers, timeout=5)
-        if r.status_code in [200, 201]:
-            return True, "Email sent successfully!"
-        else:
-            return False, f"Resend Error: {r.text}"
+        return r.status_code in [200, 201], r.text
     except Exception as e:
-        return False, f"Request Error: {str(e)}"
+        return False, str(e)
 
 # ----------------- Helper: Load Tenant Database -----------------
 @st.cache_data(ttl=60)
@@ -108,7 +97,7 @@ def load_tenant_roster():
     else:
         return pd.DataFrame(columns=["email", "name", "property", "unit", "email_clean"])
 
-# ----------------- Global Design Styling (Fintech Theme) -----------------
+# ----------------- Global Design Styling -----------------
 st.markdown(
     """
     <style>
@@ -193,6 +182,8 @@ if "temp_email" not in st.session_state:
     st.session_state["temp_email"] = ""
 if "show_login_dialog" not in st.session_state:
     st.session_state["show_login_dialog"] = False
+if "price_input" not in st.session_state:
+    st.session_state["price_input"] = 1200000
 
 # ----------------- Persistent Login Dialog -----------------
 @st.dialog("Log In / Sign Up")
@@ -345,7 +336,7 @@ if st.session_state["active_view"] == "tenant_portal":
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
-# VIEW 2: COST SEGREGATION INVESTOR DASHBOARD (Cleaned & HTML Bug Fixed)
+# VIEW 2: COST SEGREGATION INVESTOR DASHBOARD (Bug 100% Fixed with components.html)
 # ==============================================================================
 elif st.session_state["active_view"] == "costseg_dashboard":
     dash_top1, dash_top2, dash_top3 = st.columns([2, 1.2, 0.8])
@@ -376,11 +367,11 @@ elif st.session_state["active_view"] == "costseg_dashboard":
     st.markdown("<br>", unsafe_allow_html=True)
     col_alloc, col_benefit = st.columns([1.2, 0.8], gap="large")
 
-    # Fixed Asset Allocations Card (Clean HTML Rendering)
     with col_alloc:
-        alloc_html = """
-        <div class="white-card">
-            <h3 style="margin-top:0; color:#0F172A; font-weight:700;">Asset Life Class Allocations</h3>
+        # Rendered using an isolated HTML component iframe to guarantee 0% chance of markdown parsing bugs!
+        alloc_clean_html = """
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 24px;">
+            <h3 style="margin-top:0; color:#0F172A; font-weight:700; font-size:18px;">Asset Life Class Allocations</h3>
             
             <div style="display:flex; justify-content:space-between; margin-top:14px; font-size:14px; font-weight:600; color:#1E293B;">
                 <span>5-Year Personal Property</span><span>20%</span>
@@ -415,12 +406,12 @@ elif st.session_state["active_view"] == "costseg_dashboard":
             </div>
         </div>
         """
-        st.markdown(alloc_html, unsafe_allow_html=True)
+        components.html(alloc_clean_html, height=360)
 
     with col_benefit:
-        benefit_html = """
-        <div class="white-card">
-            <h3 style="margin-top:0; color:#0F172A; font-weight:700;">Estimated Tax Benefit</h3>
+        benefit_clean_html = """
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 24px;">
+            <h3 style="margin-top:0; color:#0F172A; font-weight:700; font-size:18px;">Estimated Tax Benefit</h3>
             <div style="display:flex; gap:12px; margin-top:14px;">
                 <div style="flex:1; border:1px solid #E2E8F0; border-radius:8px; padding:14px;">
                     <div style="font-size:12px; font-weight:700; color:#64748B;">Standard Straight-Line</div>
@@ -443,7 +434,7 @@ elif st.session_state["active_view"] == "costseg_dashboard":
             <div style="font-size:11px; color:#94A3B8; margin-top:4px;">Illustrative estimate at 37% Federal bracket</div>
         </div>
         """
-        st.markdown(benefit_html, unsafe_allow_html=True)
+        components.html(benefit_clean_html, height=360)
 
     st.markdown("### Active Properties & Studies")
     studies_data = [
@@ -460,7 +451,7 @@ elif st.session_state["active_view"] == "costseg_dashboard":
         st.button("Download Final Certified PDF Report", type="primary")
 
 # ==============================================================================
-# VIEW 3: PUBLIC LANDING PAGE (With Auto-Populating Property Specs)
+# VIEW 3: PUBLIC LANDING PAGE (With Interactive Auto-Population)
 # ==============================================================================
 else:
     h_col1, h_col2 = st.columns([1.1, 0.9], gap="large")
@@ -492,8 +483,8 @@ else:
         st.markdown('<div class="white-card">', unsafe_allow_html=True)
         st.markdown("<h3 style='text-align:center; margin-top:0;'>Instant Savings Estimate</h3>", unsafe_allow_html=True)
 
-        # 1. Address Search Autocomplete (OpenStreetMap Photon API)
-        search_query = st.text_input("Property Address", placeholder="Start typing address...")
+        # 1. Address Search Autocomplete
+        search_query = st.text_input("Property Address", placeholder="Start typing address (e.g. 123 Main St)...")
         selected_address = search_query
 
         if len(search_query) > 3:
@@ -514,24 +505,33 @@ else:
                             suggestions.append(clean_str)
 
                     if suggestions:
-                        selected_address = st.selectbox("Select exact matched property:", suggestions, index=0)
+                        def on_address_change():
+                            specs = fetch_property_specs(st.session_state["matched_address_select"])
+                            st.session_state["price_input"] = int(specs["price"])
+                            st.session_state["detected_specs"] = specs
+
+                        selected_address = st.selectbox(
+                            "Select exact matched property:",
+                            suggestions,
+                            index=0,
+                            key="matched_address_select",
+                            on_change=on_address_change
+                        )
             except Exception:
                 pass
 
-        # 2. Automatically Fetch Property Specs
-        specs = fetch_property_specs(selected_address)
+        specs = st.session_state.get("detected_specs") or fetch_property_specs(selected_address)
 
-        # Pre-populate purchase price using scraped / estimated market value
+        # 2. Synchronized Auto-populated Price
         purchase_price = st.number_input(
             "Purchase Price ($)",
             min_value=50000,
             max_value=50000000,
-            value=int(specs["price"]),
+            value=int(st.session_state.get("price_input", specs["price"])),
             step=25000,
-            help=f"Auto-populated from {specs['source']}."
+            key="purchase_price_widget"
         )
 
-        # Display Auto-Detected Property Attributes
         spec_c1, spec_c2 = st.columns(2)
         with spec_c1:
             st.caption(f"📐 **Est. Area:** {specs['sqft']:,} sq.ft.")
@@ -541,7 +541,6 @@ else:
         purchase_date = st.date_input("Purchase Date", value=datetime.date.today())
 
         if st.button("Estimate My Savings", use_container_width=True, type="primary"):
-            # Cost Segregation Calculation
             reclass_basis = purchase_price * 0.25
             bonus_deduction = reclass_basis * 0.60
             tax_savings = bonus_deduction * 0.37
