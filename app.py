@@ -34,7 +34,7 @@ if "temp_email" not in st.session_state:
 if "show_login_dialog" not in st.session_state:
     st.session_state["show_login_dialog"] = False
 
-# Portfolio Studies: Start completely clean from scratch
+# Portfolio Studies
 if "user_studies" not in st.session_state:
     st.session_state["user_studies"] = []
 
@@ -48,7 +48,7 @@ if "est_year" not in st.session_state:
 if "est_type" not in st.session_state:
     st.session_state["est_type"] = "Commercial / Multi-Family"
 if "chosen_address_str" not in st.session_state:
-    st.session_state["chosen_address_str"] = "123 Innovation Pkwy, Reston VA"
+    st.session_state["chosen_address_str"] = ""
 
 # Modal dynamic fields state
 if "modal_price" not in st.session_state:
@@ -85,7 +85,6 @@ def fetch_property_specs(address_str):
         except Exception:
             pass
 
-    # Location-based heuristic so different addresses generate distinct realistic specs
     seed = sum(ord(c) for c in address_str)
     pseudo_price = 750000 + (seed % 15) * 50000
     pseudo_sqft = 2200 + (seed % 12) * 200
@@ -98,32 +97,32 @@ def fetch_property_specs(address_str):
     }
 
 # ----------------- Live Keystroke Google-Style Autocomplete Component -----------------
-def google_places_autocomplete_input():
+def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start typing address (e.g., 6733 Main St)..."):
     """
     Renders live keystroke autocomplete. 
-    Updates suggestions with every character typed and posts selected address back to Streamlit.
+    Height set to 230px so the floating list is NEVER masked or clipped by borders!
     """
-    html_code = """
+    html_code = f"""
     <!DOCTYPE html>
     <html>
     <head>
     <meta charset="utf-8">
     <style>
-      * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-      body { margin: 0; padding: 0; background: transparent; overflow: visible; }
-      .container { position: relative; width: 100%; }
-      input {
+      * {{ box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+      body {{ margin: 0; padding: 0; background: transparent; overflow: visible; }}
+      .container {{ position: relative; width: 100%; }}
+      input {{
         width: 100%;
-        padding: 10px 14px;
+        padding: 11px 14px;
         font-size: 15px;
         border: 1px solid #CBD5E1;
         border-radius: 8px;
         background: #FFFFFF;
         color: #0F172A;
         outline: none;
-      }
-      input:focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }
-      .dropdown {
+      }}
+      input:focus {{ border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }}
+      .dropdown {{
         position: absolute;
         top: 48px;
         left: 0;
@@ -131,13 +130,13 @@ def google_places_autocomplete_input():
         background: #FFFFFF;
         border: 1px solid #CBD5E1;
         border-radius: 8px;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.18);
-        max-height: 220px;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
+        max-height: 175px;
         overflow-y: auto;
         z-index: 999999;
         display: none;
-      }
-      .item {
+      }}
+      .item {{
         padding: 10px 14px;
         font-size: 14px;
         color: #334155;
@@ -146,14 +145,14 @@ def google_places_autocomplete_input():
         display: flex;
         align-items: center;
         gap: 8px;
-      }
-      .item:hover { background-color: #F8FAFC; color: #2563EB; font-weight: 600; }
-      .icon { font-size: 15px; }
+      }}
+      .item:hover {{ background-color: #F8FAFC; color: #2563EB; font-weight: 600; }}
+      .icon {{ font-size: 15px; }}
     </style>
     </head>
     <body>
       <div class="container">
-        <input type="text" id="autocompleteInput" placeholder="Start typing property address (e.g., 6733 Main St)..." autocomplete="off">
+        <input type="text" id="autocompleteInput" placeholder="{placeholder}" autocomplete="off">
         <div id="resultsList" class="dropdown"></div>
       </div>
 
@@ -162,106 +161,69 @@ def google_places_autocomplete_input():
         const list = document.getElementById('resultsList');
         let timer = null;
 
-        input.addEventListener('input', function() {
+        input.addEventListener('input', function() {{
           clearTimeout(timer);
           const q = this.value.trim();
-          if (q.length < 3) {
+          if (q.length < 3) {{
             list.style.display = 'none';
             return;
-          }
+          }}
 
-          timer = setTimeout(() => {
+          timer = setTimeout(() => {{
             fetch('https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&limit=5')
               .then(res => res.json())
-              .then(data => {
+              .then(data => {{
                 list.innerHTML = '';
-                if (data.features && data.features.length > 0) {
-                  data.features.forEach(f => {
+                if (data.features && data.features.length > 0) {{
+                  data.features.forEach(f => {{
                     const p = f.properties;
                     const parts = [p.name, p.housenumber, p.street, p.city, p.state, p.postcode].filter(Boolean);
                     const formatted = parts.join(', ');
-                    if (formatted) {
+                    if (formatted) {{
                       const div = document.createElement('div');
                       div.className = 'item';
                       div.innerHTML = '<span class="icon">📍</span><span>' + formatted + '</span>';
-                      div.onclick = function() {
+                      div.onclick = function() {{
                         input.value = formatted;
                         list.style.display = 'none';
                         const parentUrl = new URL(window.parent.location.href);
-                        parentUrl.searchParams.set('sel_addr', formatted);
+                        parentUrl.searchParams.set('{param_name}', formatted);
                         window.parent.location.href = parentUrl.toString();
-                      };
+                      }};
                       list.appendChild(div);
-                    }
-                  });
+                    }}
+                  }});
                   list.style.display = 'block';
-                } else {
+                }} else {{
                   list.style.display = 'none';
-                }
-              }).catch(() => { list.style.display = 'none'; });
-          }, 180);
-        });
+                }}
+              }}).catch(() => {{ list.style.display = 'none'; }});
+          }}, 180);
+        }});
 
-        document.addEventListener('click', function(e) {
-          if (!e.target.closest('.container')) {
+        document.addEventListener('click', function(e) {{
+          if (!e.target.closest('.container')) {{
             list.style.display = 'none';
-          }
-        });
+          }}
+        }});
       </script>
     </body>
     </html>
     """
-    components.html(html_code, height=65)
-
-# ----------------- Robust Address Search Function for Modal -----------------
-def get_address_suggestions(query_text):
-    if not query_text or len(query_text.strip()) < 3:
-        return []
-    try:
-        url = "https://photon.komoot.io/api/"
-        r = requests.get(url, params={"q": query_text.strip(), "limit": 6}, timeout=3)
-        if r.status_code == 200:
-            suggs = []
-            for f in r.json().get("features", []):
-                p = f.get("properties", {})
-                parts = [p.get("name"), p.get("housenumber"), p.get("street"), p.get("city"), p.get("state"), p.get("postcode")]
-                clean = ", ".join([str(x) for x in parts if x])
-                if clean and clean not in suggs:
-                    suggs.append(clean)
-            return suggs
-    except Exception:
-        pass
-    return []
+    components.html(html_code, height=230)
 
 # ----------------- New Study Creation Modal Workflow -----------------
 @st.dialog("Create New Cost Segregation Study", width="large")
 def new_study_dialog():
     st.markdown("Enter property details to initialize an IRS-compliant virtual cost segregation study.")
     
-    new_addr_query = st.text_input(
-        "Property Address", 
-        placeholder="Type address & press Enter (e.g., 6733 Willow St, Reston VA)...",
-        help="Type at least the street number and name, then press Enter to see suggestions."
-    )
+    # 1. Live Keystroke Search inside the Modal!
+    st.caption("Start typing to see live matching properties:")
+    google_places_autocomplete_input(param_name="modal_addr", placeholder="Type property address (e.g., 6733 Main St)...")
     
-    suggs = get_address_suggestions(new_addr_query)
-    if suggs:
-        def on_modal_addr_select():
-            chosen = st.session_state["modal_addr_select_key"]
-            st.session_state["modal_selected_addr"] = chosen
-            specs = fetch_property_specs(chosen)
-            st.session_state["modal_price"] = int(specs["price"])
-            st.session_state["modal_type_index"] = 0 if "Commercial" in specs["prop_type"] else 1
-
-        st.selectbox(
-            "Suggested matching properties (select to auto-fill specs):",
-            suggs,
-            index=0,
-            key="modal_addr_select_key",
-            on_change=on_modal_addr_select
-        )
-
-    selected_addr = st.session_state.get("modal_selected_addr") or new_addr_query
+    selected_addr = st.session_state.get("modal_selected_addr", "")
+    if selected_addr:
+        st.success(f"📍 Property Selected: **{selected_addr}**")
 
     c1, c2 = st.columns(2)
     with c1:
@@ -269,7 +231,7 @@ def new_study_dialog():
             "Purchase Price / Basis ($)",
             min_value=50000,
             max_value=50000000,
-            value=int(st.session_state["modal_price"]),
+            value=int(st.session_state.get("modal_price", 1200000)),
             step=25000
         )
         new_date = st.date_input("Placed in Service Date", value=datetime.date.today())
@@ -279,7 +241,7 @@ def new_study_dialog():
         new_type = st.selectbox(
             "Asset Classification",
             prop_types,
-            index=st.session_state["modal_type_index"]
+            index=st.session_state.get("modal_type_index", 0)
         )
         new_bonus = st.selectbox(
             "Bonus Depreciation Rate", 
@@ -305,7 +267,7 @@ def new_study_dialog():
             st.success("New study created successfully!")
             st.rerun()
         else:
-            st.error("Please enter a valid property address.")
+            st.error("Please select a property address from the live suggestion list.")
 
 # ----------------- Email Sender via Resend API -----------------
 def send_real_email_code(recipient_email, code):
@@ -416,7 +378,6 @@ st.markdown(
             border-radius: 12px 12px 0 0;
             margin-top: 60px;
         }
-        /* Custom styling for the brand logo button */
         button[key="brand_home_btn"] {
             background: transparent !important;
             border: none !important;
@@ -472,6 +433,7 @@ def login_dialog():
                     st.session_state["otp_step"] = "input_email"
                     st.session_state["show_login_dialog"] = False
 
+                    # Invisible routing: automatically detects tenant vs investor
                     roster_df = load_tenant_roster()
                     match = roster_df[roster_df["email_clean"] == cleaned_email]
 
@@ -501,8 +463,8 @@ def login_dialog():
 if st.session_state["show_login_dialog"] and not st.session_state["logged_in"]:
     login_dialog()
 
-# ----------------- Top Navigation Bar (With Clickable Home Logo) -----------------
-nav_left, nav_mid, nav_right = st.columns([1.5, 2.2, 1.1])
+# ----------------- Top Navigation Bar (Discreet, Clean, No Cohort Tabs) -----------------
+nav_left, nav_mid, nav_right = st.columns([2, 1.5, 1.5])
 
 with nav_left:
     if st.button("🏢 Tax Flow Cost Seg", key="brand_home_btn"):
@@ -510,18 +472,11 @@ with nav_left:
         st.rerun()
 
 with nav_mid:
-    n1, n2, n3 = st.columns(3)
-    with n1:
-        if st.button("Public Home", use_container_width=True):
-            st.session_state["active_view"] = "landing"
-            st.rerun()
-    with n2:
-        if st.button("Cost Seg Portfolio", use_container_width=True):
-            st.session_state["active_view"] = "costseg_dashboard"
-            st.rerun()
-    with n3:
-        if st.button("Tenant Portal", use_container_width=True):
-            st.session_state["active_view"] = "tenant_portal"
+    if st.session_state["logged_in"]:
+        # Only shows a single generic "My Portal" button!
+        target_view = "tenant_portal" if st.session_state["user_cohort"] == "tenant" else "costseg_dashboard"
+        if st.button("📊 My Portal", use_container_width=True):
+            st.session_state["active_view"] = target_view
             st.rerun()
 
 with nav_right:
@@ -539,6 +494,25 @@ with nav_right:
             st.session_state["tenant_info"] = None
             st.session_state["active_view"] = "landing"
             st.rerun()
+
+# ----------------- Listen for URL Address Selections -----------------
+if "sel_addr" in st.query_params:
+    chosen_address = st.query_params["sel_addr"]
+    specs = fetch_property_specs(chosen_address)
+    st.session_state["chosen_address_str"] = chosen_address
+    st.session_state["est_price"] = int(specs["price"])
+    st.session_state["est_sqft"] = int(specs["sqft"])
+    st.session_state["est_year"] = int(specs["year_built"])
+    st.session_state["est_type"] = specs["prop_type"]
+    del st.query_params["sel_addr"]
+
+if "modal_addr" in st.query_params:
+    chosen_modal_address = st.query_params["modal_addr"]
+    specs = fetch_property_specs(chosen_modal_address)
+    st.session_state["modal_selected_addr"] = chosen_modal_address
+    st.session_state["modal_price"] = int(specs["price"])
+    st.session_state["modal_type_index"] = 0 if "Commercial" in specs["prop_type"] else 1
+    del st.query_params["modal_addr"]
 
 # ==============================================================================
 # VIEW 1: RESIDENT / TENANT PORTAL
@@ -606,7 +580,6 @@ elif st.session_state["active_view"] == "costseg_dashboard":
         if st.button("+ New Study", type="primary", use_container_width=True):
             new_study_dialog()
 
-    # 4 Executive KPI Cards
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     with kpi1:
         st.markdown(f'<div class="kpi-card"><div class="kpi-title">Total Depreciable Basis</div><div class="kpi-value">${total_basis:,.0f}</div><div class="kpi-sub">Portfolio Acquisition Value</div></div>', unsafe_allow_html=True)
@@ -701,20 +674,9 @@ elif st.session_state["active_view"] == "costseg_dashboard":
         )
 
 # ==============================================================================
-# VIEW 3: PUBLIC LANDING PAGE (With True Google Keystroke Autocomplete)
+# VIEW 3: PUBLIC LANDING PAGE (Clean, Keystroke Autocomplete)
 # ==============================================================================
 else:
-    # 1. Listen for address selected in the live keystroke search
-    if "sel_addr" in st.query_params:
-        chosen_address = st.query_params["sel_addr"]
-        specs = fetch_property_specs(chosen_address)
-        st.session_state["chosen_address_str"] = chosen_address
-        st.session_state["est_price"] = int(specs["price"])
-        st.session_state["est_sqft"] = int(specs["sqft"])
-        st.session_state["est_year"] = int(specs["year_built"])
-        st.session_state["est_type"] = specs["prop_type"]
-        del st.query_params["sel_addr"]
-
     h_col1, h_col2 = st.columns([1.1, 0.9], gap="large")
 
     with h_col1:
@@ -744,15 +706,15 @@ else:
         st.markdown('<div class="white-card">', unsafe_allow_html=True)
         st.markdown("<h3 style='text-align:center; margin-top:0;'>Instant Savings Estimate</h3>", unsafe_allow_html=True)
 
-        # 1. True Google-Style Keystroke Autocomplete Component
-        st.caption("Start typing to see live address suggestions:")
-        google_places_autocomplete_input()
+        # 1. Unclipped Keystroke Autocomplete Component
+        st.caption("Start typing to see live matching properties:")
+        google_places_autocomplete_input(param_name="sel_addr", placeholder="Start typing address (e.g. 6733 Main St)...")
 
-        # Confirmed address feedback badge
+        # Confirmed address badge
         if st.session_state.get("chosen_address_str"):
-            st.success(f"📍 Selected: **{st.session_state['chosen_address_str']}**")
+            st.success(f"📍 Property Selected: **{st.session_state['chosen_address_str']}**")
 
-        # 2. Number Input (Auto-populates immediately, user can freely overwrite)
+        # 2. Number Input (Auto-populates immediately upon selection, freely editable)
         purchase_price = st.number_input(
             "Purchase Price ($)",
             min_value=50000,
@@ -785,7 +747,7 @@ else:
                     <div style="font-size:13px; color:#374151; line-height:1.6;">
                         <b>Accelerated 5/15-Yr Basis:</b> ${reclass_basis:,.0f}<br>
                         <b>Classification:</b> {st.session_state['est_type']}<br>
-                        <b>Property:</b> {st.session_state.get('chosen_address_str', '123 Innovation Pkwy, Reston VA')}
+                        <b>Property:</b> {st.session_state.get('chosen_address_str', 'Selected Property')}
                     </div>
                 </div>
                 """,
