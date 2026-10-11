@@ -89,44 +89,102 @@ def fetch_property_specs(address_str):
 
 # ----------------- New Study Creation Modal Workflow -----------------
 @st.dialog("Create New Cost Segregation Study", width="large")
+# ----------------- New Study Creation Modal Workflow (With Reactive Autopopulation) -----------------
+@st.dialog("Create New Cost Segregation Study", width="large")
 def new_study_dialog():
     st.markdown("Enter property details to initialize an IRS-compliant virtual cost segregation study.")
     
-    # Live address search inside the modal
-    new_addr_query = st.text_input("Property Address", placeholder="Start typing address...")
-    selected_new_addr = new_addr_query
+    # State tracking for new study fields
+    if "modal_price" not in st.session_state:
+        st.session_state["modal_price"] = 1200000
+    if "modal_type_index" not in st.session_state:
+        st.session_state["modal_type_index"] = 0
+    if "modal_selected_addr" not in st.session_state:
+        st.session_state["modal_selected_addr"] = ""
+
+    # 1. Address Input
+    new_addr_query = st.text_input(
+        "Property Address", 
+        placeholder="Type address & press Enter (e.g., 6733 Willow St, Reston VA)...",
+        help="Type at least the street number and name, then press Enter to see suggestions."
+    )
     
-    if len(new_addr_query) > 3:
+    # Live Search Suggestions
+    if len(new_addr_query.strip()) >= 4:
         try:
-            r = requests.get("https://photon.komoot.io/api/", params={"q": new_addr_query, "limit": 4}, timeout=3)
+            r = requests.get(
+                "https://photon.komoot.io/api/", 
+                params={"q": new_addr_query, "limit": 5}, 
+                timeout=3
+            )
             if r.status_code == 200:
-                suggs = [
-                    ", ".join([str(v) for k, v in f.get("properties", {}).items() if k in ["name", "street", "city", "state", "postcode"] and v])
-                    for f in r.json().get("features", [])
-                ]
-                suggs = [s for s in suggs if s]
+                features = r.json().get("features", [])
+                suggs = []
+                for f in features:
+                    p = f.get("properties", {})
+                    parts = [p.get("housenumber"), p.get("street"), p.get("city"), p.get("state"), p.get("postcode")]
+                    clean_str = ", ".join([str(v) for v in parts if v])
+                    if clean_str and clean_str not in suggs:
+                        suggs.append(clean_str)
+
                 if suggs:
-                    selected_new_addr = st.selectbox("Select exact match:", suggs, index=0)
+                    def on_modal_addr_select():
+                        chosen = st.session_state["modal_addr_select_key"]
+                        st.session_state["modal_selected_addr"] = chosen
+                        specs = fetch_property_specs(chosen)
+                        # Reactive autopopulation of modal fields
+                        st.session_state["modal_price"] = int(specs["price"])
+                        if "Commercial" in specs["prop_type"]:
+                            st.session_state["modal_type_index"] = 0
+                        else:
+                            st.session_state["modal_type_index"] = 1
+
+                    st.selectbox(
+                        "Suggested matching properties (select to auto-fill specs):",
+                        suggs,
+                        index=0,
+                        key="modal_addr_select_key",
+                        on_change=on_modal_addr_select
+                    )
         except Exception:
             pass
-            
+
+    selected_addr = st.session_state.get("modal_selected_addr") or new_addr_query
+
+    # 2. Synchronized Inputs (Auto-populated from specs)
     c1, c2 = st.columns(2)
     with c1:
-        new_price = st.number_input("Purchase Price / Basis ($)", min_value=50000, max_value=50000000, value=1200000, step=25000)
+        new_price = st.number_input(
+            "Purchase Price / Basis ($)",
+            min_value=50000,
+            max_value=50000000,
+            value=int(st.session_state.get("modal_price", 1200000)),
+            step=25000,
+            key="modal_price_widget"
+        )
         new_date = st.date_input("Placed in Service Date", value=datetime.date.today())
+
     with c2:
-        new_type = st.selectbox("Asset Classification", ["Commercial / Office", "Residential Multi-Family", "Short-Term Rental / Airbnb", "Industrial / Warehouse", "Retail"])
-        new_bonus = st.selectbox("Bonus Depreciation Rate", ["60% (Tax Year 2024)", "80% (Tax Year 2023)", "100% (Pre-2023)", "40% (Tax Year 2025)"])
+        prop_types = ["Commercial / Office", "Residential Multi-Family", "Short-Term Rental / Airbnb", "Industrial / Warehouse", "Retail"]
+        new_type = st.selectbox(
+            "Asset Classification",
+            prop_types,
+            index=st.session_state.get("modal_type_index", 0),
+            key="modal_type_widget"
+        )
+        new_bonus = st.selectbox(
+            "Bonus Depreciation Rate", 
+            ["60% (Tax Year 2024)", "80% (Tax Year 2023)", "100% (Pre-2023)", "40% (Tax Year 2025)"]
+        )
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Initialize Study & Add to Portfolio", type="primary", use_container_width=True):
-        if selected_new_addr and len(selected_new_addr) > 5:
-            # Reallocation heuristic based on asset class
+        if selected_addr and len(selected_addr.strip()) > 5:
             reclass_rate = 0.30 if "Short-Term" in new_type or "Commercial" in new_type else 0.22
             reallocated_val = new_price * reclass_rate
             
             new_record = {
-                "Property": selected_new_addr,
+                "Property": selected_addr,
                 "Placed in Service": str(new_date),
                 "Basis": f"${new_price:,.0f}",
                 "Reallocated": f"${reallocated_val:,.0f}",
@@ -139,6 +197,7 @@ def new_study_dialog():
             st.rerun()
         else:
             st.error("Please enter a valid property address.")
+
 
 # ----------------- Email Sender via Resend API -----------------
 def send_real_email_code(recipient_email, code):
