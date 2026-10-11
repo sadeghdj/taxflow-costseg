@@ -176,7 +176,7 @@ def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start t
     </body>
     </html>
     """
-    components.html(html_code, height=60)
+    components.html(html_code, height=260)
 
 
 # ----------------- New Study Creation Modal Workflow -----------------
