@@ -34,11 +34,11 @@ if "temp_email" not in st.session_state:
 if "show_login_dialog" not in st.session_state:
     st.session_state["show_login_dialog"] = False
 
-# Start with completely clean portfolio (no hardcoded properties)
+# Portfolio Studies: Start completely clean from scratch
 if "user_studies" not in st.session_state:
     st.session_state["user_studies"] = []
 
-# Synchronized Autopopulation State for Estimator
+# Synchronized Autopopulation State
 if "est_price" not in st.session_state:
     st.session_state["est_price"] = 1200000
 if "est_sqft" not in st.session_state:
@@ -92,8 +92,37 @@ def fetch_property_specs(address_str):
         "price": pseudo_price,
         "sqft": pseudo_sqft,
         "year_built": pseudo_year,
-        "prop_type": "Commercial / Multi-Family"
+        "prop_type": "Commercial / Multi-Family" if ("St" in address_str or "Ave" in address_str or "Pkwy" in address_str) else "Residential Multi-Family"
     }
+
+# ----------------- Robust Address Search Function -----------------
+def get_address_suggestions(query_text):
+    """Queries Photon/OSM with robust fallback to extract clean full addresses."""
+    if not query_text or len(query_text.strip()) < 3:
+        return []
+    try:
+        url = "https://photon.komoot.io/api/"
+        r = requests.get(url, params={"q": query_text.strip(), "limit": 6}, timeout=3)
+        if r.status_code == 200:
+            suggs = []
+            for f in r.json().get("features", []):
+                p = f.get("properties", {})
+                # Crucial fix: include p.get("name")
+                parts = [
+                    p.get("name"),
+                    p.get("housenumber"),
+                    p.get("street"),
+                    p.get("city"),
+                    p.get("state"),
+                    p.get("postcode")
+                ]
+                clean = ", ".join([str(x) for x in parts if x])
+                if clean and clean not in suggs:
+                    suggs.append(clean)
+            return suggs
+    except Exception:
+        pass
+    return []
 
 # ----------------- New Study Creation Modal Workflow -----------------
 @st.dialog("Create New Cost Segregation Study", width="large")
@@ -106,35 +135,22 @@ def new_study_dialog():
         help="Type at least the street number and name, then press Enter to see suggestions."
     )
     
-    if len(new_addr_query.strip()) >= 4:
-        try:
-            r = requests.get("https://photon.komoot.io/api/", params={"q": new_addr_query, "limit": 5}, timeout=3)
-            if r.status_code == 200:
-                suggs = []
-                for f in r.json().get("features", []):
-                    p = f.get("properties", {})
-                    parts = [p.get("housenumber"), p.get("street"), p.get("city"), p.get("state"), p.get("postcode")]
-                    clean_str = ", ".join([str(v) for v in parts if v])
-                    if clean_str and clean_str not in suggs:
-                        suggs.append(clean_str)
+    suggs = get_address_suggestions(new_addr_query)
+    if suggs:
+        def on_modal_addr_select():
+            chosen = st.session_state["modal_addr_select_key"]
+            st.session_state["modal_selected_addr"] = chosen
+            specs = fetch_property_specs(chosen)
+            st.session_state["modal_price"] = int(specs["price"])
+            st.session_state["modal_type_index"] = 0 if "Commercial" in specs["prop_type"] else 1
 
-                if suggs:
-                    def on_modal_addr_select():
-                        chosen = st.session_state["modal_addr_select_key"]
-                        st.session_state["modal_selected_addr"] = chosen
-                        specs = fetch_property_specs(chosen)
-                        st.session_state["modal_price"] = int(specs["price"])
-                        st.session_state["modal_type_index"] = 0 if "Commercial" in specs["prop_type"] else 1
-
-                    st.selectbox(
-                        "Suggested matching properties (select to auto-fill specs):",
-                        suggs,
-                        index=0,
-                        key="modal_addr_select_key",
-                        on_change=on_modal_addr_select
-                    )
-        except Exception:
-            pass
+        st.selectbox(
+            "Suggested matching properties (select to auto-fill specs):",
+            suggs,
+            index=0,
+            key="modal_addr_select_key",
+            on_change=on_modal_addr_select
+        )
 
     selected_addr = st.session_state.get("modal_selected_addr") or new_addr_query
 
@@ -183,7 +199,6 @@ def new_study_dialog():
             st.error("Please enter a valid property address.")
 
 # ----------------- Email Sender via Resend API -----------------
-# REPLACE THIS SECTION:
 def send_real_email_code(recipient_email, code):
     api_key = st.secrets.get("RESEND_API_KEY")
     if not api_key:
@@ -193,7 +208,6 @@ def send_real_email_code(recipient_email, code):
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     plain_text = f"Your Tax Flow Cost Seg verification code is: {code}\n\nExpires in 10 minutes."
     
-    # Clean, fail-proof single-line HTML string:
     html_content = (
         "<div style='font-family: sans-serif; max-width: 500px; padding: 24px; border: 1px solid #E2E8F0; border-radius: 12px; background: #FFFFFF;'>"
         "<h2 style='color: #0F172A; margin-top: 0;'>Tax Flow Cost Seg</h2>"
@@ -217,7 +231,6 @@ def send_real_email_code(recipient_email, code):
         return r.status_code in [200, 201], r.text
     except Exception as e:
         return False, str(e)
-
 
 # ----------------- Helper: Load Tenant Database -----------------
 @st.cache_data(ttl=60)
@@ -294,6 +307,16 @@ st.markdown(
             border-radius: 12px 12px 0 0;
             margin-top: 60px;
         }
+        /* Custom styling for the brand logo button */
+        button[key="brand_home_btn"] {
+            background: transparent !important;
+            border: none !important;
+            color: #0F172A !important;
+            font-size: 22px !important;
+            font-weight: 800 !important;
+            padding: 0 !important;
+            text-align: left !important;
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -369,25 +392,30 @@ def login_dialog():
 if st.session_state["show_login_dialog"] and not st.session_state["logged_in"]:
     login_dialog()
 
-# ----------------- Top Navigation Bar -----------------
-nav_left, nav_mid, nav_right = st.columns([1.5, 2, 1.2])
+# ----------------- Top Navigation Bar (With Clickable Home Logo) -----------------
+nav_left, nav_mid, nav_right = st.columns([1.5, 2.2, 1.1])
 
 with nav_left:
-    st.markdown("<h3 style='margin:0; font-weight:800; color:#0F172A;'>Tax Flow Cost Seg</h3>", unsafe_allow_html=True)
+    # Clicking logo returns to Home/Landing page from any view!
+    if st.button("🏢 Tax Flow Cost Seg", key="brand_home_btn"):
+        st.session_state["active_view"] = "landing"
+        st.rerun()
 
 with nav_mid:
-    if st.session_state["logged_in"]:
-        sub_c1, sub_c2 = st.columns(2)
-        with sub_c1:
-            if st.button("Public Home", use_container_width=True):
-                st.session_state["active_view"] = "landing"
-                st.rerun()
-        with sub_c2:
-            target_portal = "My Property Portal" if st.session_state["user_cohort"] == "tenant" else "My Cost Seg Portfolio"
-            target_view = "tenant_portal" if st.session_state["user_cohort"] == "tenant" else "costseg_dashboard"
-            if st.button(target_portal, use_container_width=True):
-                st.session_state["active_view"] = target_view
-                st.rerun()
+    # Permanent navigation tabs so user never gets stuck
+    n1, n2, n3 = st.columns(3)
+    with n1:
+        if st.button("Public Home", use_container_width=True):
+            st.session_state["active_view"] = "landing"
+            st.rerun()
+    with n2:
+        if st.button("Cost Seg Portfolio", use_container_width=True):
+            st.session_state["active_view"] = "costseg_dashboard"
+            st.rerun()
+    with n3:
+        if st.button("Tenant Portal", use_container_width=True):
+            st.session_state["active_view"] = "tenant_portal"
+            st.rerun()
 
 with nav_right:
     if not st.session_state["logged_in"]:
@@ -566,7 +594,7 @@ elif st.session_state["active_view"] == "costseg_dashboard":
         )
 
 # ==============================================================================
-# VIEW 3: PUBLIC LANDING PAGE (Working Address Autopopulation)
+# VIEW 3: PUBLIC LANDING PAGE (With Working Real-Time Autopopulation)
 # ==============================================================================
 else:
     h_col1, h_col2 = st.columns([1.1, 0.9], gap="large")
@@ -598,44 +626,35 @@ else:
         st.markdown('<div class="white-card">', unsafe_allow_html=True)
         st.markdown("<h3 style='text-align:center; margin-top:0;'>Instant Savings Estimate</h3>", unsafe_allow_html=True)
 
-        search_query = st.text_input("Property Address", placeholder="Start typing address (e.g. 100 Main St)...")
+        # 1. Address Search Input
+        search_query = st.text_input(
+            "Property Address", 
+            placeholder="Type address & press Enter (e.g. 6733 Main St, Reston)...",
+            help="Type at least the street number & name, then press Enter to view matching addresses."
+        )
         selected_address = search_query
 
-        if len(search_query.strip()) >= 4:
-            try:
-                resp = requests.get(
-                    "https://photon.komoot.io/api/",
-                    params={"q": search_query, "limit": 5},
-                    timeout=3,
-                )
-                if resp.status_code == 200:
-                    suggs = []
-                    for f in resp.json().get("features", []):
-                        p = f.get("properties", {})
-                        parts = [p.get("housenumber"), p.get("street"), p.get("city"), p.get("state"), p.get("postcode")]
-                        clean_str = ", ".join([str(x) for x in parts if x])
-                        if clean_str and clean_str not in suggs:
-                            suggs.append(clean_str)
+        # 2. Address Suggestions List
+        suggs = get_address_suggestions(search_query)
+        if suggs:
+            def handle_address_selection():
+                chosen = st.session_state["chosen_addr"]
+                specs = fetch_property_specs(chosen)
+                # Synchronize session state so the price box updates on-screen
+                st.session_state["est_price"] = int(specs["price"])
+                st.session_state["est_sqft"] = int(specs["sqft"])
+                st.session_state["est_year"] = int(specs["year_built"])
+                st.session_state["est_type"] = specs["prop_type"]
 
-                    if suggs:
-                        def handle_address_selection():
-                            chosen = st.session_state["chosen_addr"]
-                            specs = fetch_property_specs(chosen)
-                            st.session_state["est_price"] = int(specs["price"])
-                            st.session_state["est_sqft"] = int(specs["sqft"])
-                            st.session_state["est_year"] = int(specs["year_built"])
-                            st.session_state["est_type"] = specs["prop_type"]
+            selected_address = st.selectbox(
+                "Select exact matching property (auto-populates specs):",
+                suggs,
+                index=0,
+                key="chosen_addr",
+                on_change=handle_address_selection
+            )
 
-                        selected_address = st.selectbox(
-                            "Select exact matched property:",
-                            suggs,
-                            index=0,
-                            key="chosen_addr",
-                            on_change=handle_address_selection
-                        )
-            except Exception:
-                pass
-
+        # 3. Synchronized Number Input (Auto-populates immediately)
         purchase_price = st.number_input(
             "Purchase Price ($)",
             min_value=50000,
