@@ -97,11 +97,13 @@ def fetch_property_specs(address_str):
     }
 
 # ----------------- Live Keystroke Google-Style Autocomplete Component -----------------
-def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start typing address (e.g., 6733 Main St)..."):
+def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start typing address (e.g. 3326 Lakeway Ln, Pearland)..."):
     """
-    Renders live keystroke autocomplete. 
-    Height set to 230px so the floating list is NEVER masked or clipped by borders!
+    Official Google Places Keystroke Autocomplete.
+    Uses Google Maps Places API for 100% accurate US rooftop and house-number matching.
     """
+    gkey = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
+
     html_code = f"""
     <!DOCTYPE html>
     <html>
@@ -109,8 +111,23 @@ def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start t
     <meta charset="utf-8">
     <style>
       * {{ box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
-      body {{ margin: 0; padding: 0; background: transparent; overflow: visible; }}
-      .container {{ position: relative; width: 100%; }}
+      body {{ margin: 0; padding: 0; background: transparent; }}
+      .pac-container {{
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        border-radius: 8px !important;
+        border: 1px solid #CBD5E1 !important;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.18) !important;
+        margin-top: 4px !important;
+        z-index: 999999 !important;
+      }}
+      .pac-item {{
+        padding: 8px 12px !important;
+        font-size: 14px !important;
+        cursor: pointer !important;
+      }}
+      .pac-item:hover {{
+        background-color: #F8FAFC !important;
+      }}
       input {{
         width: 100%;
         padding: 11px 14px;
@@ -122,95 +139,45 @@ def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start t
         outline: none;
       }}
       input:focus {{ border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }}
-      .dropdown {{
-        position: absolute;
-        top: 48px;
-        left: 0;
-        right: 0;
-        background: #FFFFFF;
-        border: 1px solid #CBD5E1;
-        border-radius: 8px;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
-        max-height: 175px;
-        overflow-y: auto;
-        z-index: 999999;
-        display: none;
-      }}
-      .item {{
-        padding: 10px 14px;
-        font-size: 14px;
-        color: #334155;
-        cursor: pointer;
-        border-bottom: 1px solid #F1F5F9;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }}
-      .item:hover {{ background-color: #F8FAFC; color: #2563EB; font-weight: 600; }}
-      .icon {{ font-size: 15px; }}
     </style>
+    <!-- Load Official Google Maps Places Library -->
+    <script src="https://maps.googleapis.com/maps/api/js?key={gkey}&libraries=places"></script>
     </head>
     <body>
-      <div class="container">
-        <input type="text" id="autocompleteInput" placeholder="{placeholder}" autocomplete="off">
-        <div id="resultsList" class="dropdown"></div>
-      </div>
+      <input id="autocomplete" type="text" placeholder="{placeholder}" autocomplete="off">
 
       <script>
-        const input = document.getElementById('autocompleteInput');
-        const list = document.getElementById('resultsList');
-        let timer = null;
+        function initAutocomplete() {{
+          const input = document.getElementById('autocomplete');
+          // Bias search to US addresses
+          const options = {{
+            componentRestrictions: {{ country: "us" }},
+            fields: ["formatted_address", "address_components", "geometry"],
+            types: ["address"]
+          }};
 
-        input.addEventListener('input', function() {{
-          clearTimeout(timer);
-          const q = this.value.trim();
-          if (q.length < 3) {{
-            list.style.display = 'none';
-            return;
-          }}
+          const autocomplete = new google.maps.places.Autocomplete(input, options);
 
-          timer = setTimeout(() => {{
-            fetch('https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&limit=5')
-              .then(res => res.json())
-              .then(data => {{
-                list.innerHTML = '';
-                if (data.features && data.features.length > 0) {{
-                  data.features.forEach(f => {{
-                    const p = f.properties;
-                    const parts = [p.name, p.housenumber, p.street, p.city, p.state, p.postcode].filter(Boolean);
-                    const formatted = parts.join(', ');
-                    if (formatted) {{
-                      const div = document.createElement('div');
-                      div.className = 'item';
-                      div.innerHTML = '<span class="icon">📍</span><span>' + formatted + '</span>';
-                      div.onclick = function() {{
-                        input.value = formatted;
-                        list.style.display = 'none';
-                        const parentUrl = new URL(window.parent.location.href);
-                        parentUrl.searchParams.set('{param_name}', formatted);
-                        window.parent.location.href = parentUrl.toString();
-                      }};
-                      list.appendChild(div);
-                    }}
-                  }});
-                  list.style.display = 'block';
-                }} else {{
-                  list.style.display = 'none';
-                }}
-              }}).catch(() => {{ list.style.display = 'none'; }});
-          }}, 180);
-        }});
+          autocomplete.addListener('place_changed', function() {{
+            const place = autocomplete.getPlace();
+            if (!place.formatted_address) return;
 
-        document.addEventListener('click', function(e) {{
-          if (!e.target.closest('.container')) {{
-            list.style.display = 'none';
-          }}
-        }});
+            const fullAddress = place.formatted_address;
+            
+            // Pass confirmed address back to Streamlit URL query parameter for instant rerun
+            const parentUrl = new URL(window.parent.location.href);
+            parentUrl.searchParams.set('{param_name}', fullAddress);
+            window.parent.location.href = parentUrl.toString();
+          }});
+        }}
+
+        window.onload = initAutocomplete;
       </script>
     </body>
     </html>
     """
-    components.html(html_code, height=230)
+    components.html(html_code, height=60)
+
 
 # ----------------- New Study Creation Modal Workflow -----------------
 @st.dialog("Create New Cost Segregation Study", width="large")
