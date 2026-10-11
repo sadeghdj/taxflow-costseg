@@ -100,7 +100,7 @@ def fetch_property_specs(address_str):
 # ----------------- Official Google Places Autocomplete Component with Error Catcher -----------------
 def google_places_autocomplete_input(
     param_name="sel_addr",
-    placeholder="Start typing an address (e.g. 3326 Lakeway Ln, Pearland)..."
+    placeholder="Start typing address (e.g. 3326 Lakeway Ln, Pearland)..."
 ):
     gkey = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
 
@@ -110,7 +110,6 @@ def google_places_autocomplete_input(
 
     safe_key = json.dumps(gkey)
     safe_param = json.dumps(param_name)
-    safe_placeholder = json.dumps(placeholder)
 
     html_code = f"""
     <!DOCTYPE html>
@@ -128,25 +127,13 @@ def google_places_autocomplete_input(
           background: transparent;
           overflow: visible;
         }}
-        #pac-input {{
+        .autocomplete-wrapper {{
           width: 100%;
-          padding: 11px 14px;
-          font-size: 15px;
-          border: 1px solid #CBD5E1;
-          border-radius: 8px;
-          background: #FFFFFF;
-          color: #0F172A;
-          outline: none;
         }}
-        #pac-input:focus {{
-          border-color: #2563EB;
-          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
-        }}
-        .pac-container {{
-          border-radius: 8px !important;
-          border: 1px solid #CBD5E1 !important;
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.18) !important;
-          z-index: 999999 !important;
+        /* Google Places (New) Web Component styling */
+        gmp-place-autocomplete {{
+          width: 100%;
+          display: block;
         }}
         #error-message {{
           display: none;
@@ -157,21 +144,21 @@ def google_places_autocomplete_input(
           border: 1px solid #FECACA;
           border-radius: 6px;
           font-size: 13px;
-          line-height: 1.4;
         }}
       </style>
+      <!-- Load Google Maps JavaScript API with Places (New) Library -->
+      <script>
+        (g=>{{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={{}});var d=b.maps||(b.maps={{}}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${{c}}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))}})({{
+          key: {safe_key},
+          v: "weekly"
+        }});
+      </script>
     </head>
     <body>
-      <input
-        id="pac-input"
-        type="text"
-        placeholder={safe_placeholder}
-        autocomplete="off"
-      >
+      <div class="autocomplete-wrapper" id="container"></div>
       <div id="error-message"></div>
 
       <script>
-        const apiKey = {safe_key};
         const queryParameter = {safe_param};
 
         function showError(message) {{
@@ -181,45 +168,41 @@ def google_places_autocomplete_input(
         }}
 
         window.gm_authFailure = function() {{
-          showError(
-            "Google Maps Authentication Failed: Check that Billing is active on this project, " +
-            "Maps JavaScript API and Places API are enabled, and there are no restrictive website referrers."
-          );
+          showError("Google Maps authentication failed. Please verify API restrictions and billing.");
         }};
 
-        window.initializeAutocomplete = function() {{
+        async function initAutocomplete() {{
           try {{
-            const input = document.getElementById("pac-input");
-            const autocomplete = new google.maps.places.Autocomplete(input, {{
-              componentRestrictions: {{ country: "us" }},
-              fields: ["formatted_address", "geometry"],
-              types: ["address"]
+            // Import modern 2024 Places (New) library
+            const {{ PlaceAutocompleteElement }} = await google.maps.importLibrary("places");
+            
+            const autocomplete = new PlaceAutocompleteElement({{
+              componentRestrictions: {{ country: ["us"] }}
             }});
 
-            autocomplete.addListener("place_changed", function() {{
-              const place = autocomplete.getPlace();
-              if (!place || !place.formatted_address) {{
-                showError("Please select a valid address from the suggestion list.");
-                return;
-              }}
+            const container = document.getElementById("container");
+            container.appendChild(autocomplete);
+
+            // Listen for Place Selection on Places API (New)
+            autocomplete.addEventListener("gmp-placeselect", async ({{ place }}) => {{
+              await place.fetchFields({{
+                fields: ["formattedAddress", "location"]
+              }});
+
+              if (!place.formattedAddress) return;
+
               const parentUrl = new URL(window.parent.location.href);
-              parentUrl.searchParams.set(queryParameter, place.formatted_address);
+              parentUrl.searchParams.set(queryParameter, place.formattedAddress);
               window.parent.location.href = parentUrl.toString();
             }});
-          }} catch (error) {{
-            console.error(error);
-            showError("Places initialization error: " + error.message);
-          }}
-        }};
 
-        const script = document.createElement("script");
-        script.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(apiKey) + "&libraries=places&callback=initializeAutocomplete&loading=async";
-        script.async = true;
-        script.defer = true;
-        script.onerror = function() {{
-          showError("Google Maps JavaScript library could not be loaded from Google's servers.");
-        }};
-        document.head.appendChild(script);
+          }} catch (err) {{
+            console.error("Initialization error:", err);
+            showError("Places (New) initialization error: " + err.message);
+          }}
+        }}
+
+        initAutocomplete();
       </script>
     </body>
     </html>
