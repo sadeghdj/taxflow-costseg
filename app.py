@@ -34,7 +34,7 @@ if "temp_email" not in st.session_state:
 if "show_login_dialog" not in st.session_state:
     st.session_state["show_login_dialog"] = False
 
-# Portfolio Studies
+# Portfolio Studies: Start completely clean from scratch
 if "user_studies" not in st.session_state:
     st.session_state["user_studies"] = []
 
@@ -96,12 +96,8 @@ def fetch_property_specs(address_str):
         "prop_type": "Commercial / Multi-Family" if ("St" in address_str or "Ave" in address_str or "Pkwy" in address_str) else "Residential Multi-Family"
     }
 
-# ----------------- Live Keystroke Google-Style Autocomplete Component -----------------
+# ----------------- Official Google Places (New) Autocomplete Component -----------------
 def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start typing address (e.g. 160 Church Road, North Wales, PA 19454)..."):
-    """
-    Official Google Places (New) 2024 Keystroke Autocomplete.
-    Uses Google's PlaceAutocompleteElement (fully compatible with Places API New).
-    """
     gkey = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
 
     html_code = f"""
@@ -112,10 +108,7 @@ def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start t
     <style>
       * {{ box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
       body {{ margin: 0; padding: 0; background: transparent; overflow: visible; }}
-      .search-box {{ width: 100%; }}
-      gmp-place-autocomplete {{
-        width: 100%;
-      }}
+      .search-box {{ width: 100%; position: relative; }}
       input {{
         width: 100%;
         padding: 11px 14px;
@@ -179,13 +172,11 @@ def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start t
     """
     components.html(html_code, height=260)
 
-
 # ----------------- New Study Creation Modal Workflow -----------------
 @st.dialog("Create New Cost Segregation Study", width="large")
 def new_study_dialog():
     st.markdown("Enter property details to initialize an IRS-compliant virtual cost segregation study.")
     
-    # 1. Live Keystroke Search inside the Modal!
     st.caption("Start typing to see live matching properties:")
     google_places_autocomplete_input(param_name="modal_addr", placeholder="Type property address (e.g., 6733 Main St)...")
     
@@ -401,7 +392,6 @@ def login_dialog():
                     st.session_state["otp_step"] = "input_email"
                     st.session_state["show_login_dialog"] = False
 
-                    # Invisible routing: automatically detects tenant vs investor
                     roster_df = load_tenant_roster()
                     match = roster_df[roster_df["email_clean"] == cleaned_email]
 
@@ -441,7 +431,6 @@ with nav_left:
 
 with nav_mid:
     if st.session_state["logged_in"]:
-        # Only shows a single generic "My Portal" button!
         target_view = "tenant_portal" if st.session_state["user_cohort"] == "tenant" else "costseg_dashboard"
         if st.button("📊 My Portal", use_container_width=True):
             st.session_state["active_view"] = target_view
@@ -674,15 +663,12 @@ else:
         st.markdown('<div class="white-card">', unsafe_allow_html=True)
         st.markdown("<h3 style='text-align:center; margin-top:0;'>Instant Savings Estimate</h3>", unsafe_allow_html=True)
 
-        # 1. Unclipped Keystroke Autocomplete Component
         st.caption("Start typing to see live matching properties:")
-        google_places_autocomplete_input(param_name="sel_addr", placeholder="Start typing address (e.g. 6733 Main St)...")
+        google_places_autocomplete_input(param_name="sel_addr", placeholder="Start typing address (e.g. 160 Church Road)...")
 
-        # Confirmed address badge
         if st.session_state.get("chosen_address_str"):
             st.success(f"📍 Property Selected: **{st.session_state['chosen_address_str']}**")
 
-        # 2. Number Input (Auto-populates immediately upon selection, freely editable)
         purchase_price = st.number_input(
             "Purchase Price ($)",
             min_value=50000,
