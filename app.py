@@ -100,7 +100,7 @@ def fetch_property_specs(address_str):
 # ----------------- Official Google Places Autocomplete Component with Error Catcher -----------------
 def google_places_autocomplete_input(
     param_name="sel_addr",
-    placeholder="Start typing an address (e.g., 3326 Lakeway Ln, Pearland)..."
+    placeholder="Start typing an address (e.g. 3326 Lakeway Ln, Pearland)..."
 ):
     gkey = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
 
@@ -151,12 +151,13 @@ def google_places_autocomplete_input(
         #error-message {{
           display: none;
           margin-top: 8px;
-          padding: 8px 10px;
+          padding: 10px;
           color: #991B1B;
           background: #FEF2F2;
           border: 1px solid #FECACA;
           border-radius: 6px;
-          font-size: 12px;
+          font-size: 13px;
+          line-height: 1.4;
         }}
       </style>
     </head>
@@ -181,8 +182,8 @@ def google_places_autocomplete_input(
 
         window.gm_authFailure = function() {{
           showError(
-            "Google Maps authentication failed: Please verify that Billing is active, " +
-            "and that both 'Places API' and 'Maps JavaScript API' are enabled in this project."
+            "Google Maps Authentication Failed: Check that Billing is active on this project, " +
+            "Maps JavaScript API and Places API are enabled, and there are no restrictive website referrers."
           );
         }};
 
@@ -198,7 +199,7 @@ def google_places_autocomplete_input(
             autocomplete.addListener("place_changed", function() {{
               const place = autocomplete.getPlace();
               if (!place || !place.formatted_address) {{
-                showError("Please select a property from the suggestion list.");
+                showError("Please select a valid address from the suggestion list.");
                 return;
               }}
               const parentUrl = new URL(window.parent.location.href);
@@ -206,7 +207,8 @@ def google_places_autocomplete_input(
               window.parent.location.href = parentUrl.toString();
             }});
           }} catch (error) {{
-            showError("Google Places could not initialize: " + error.message);
+            console.error(error);
+            showError("Places initialization error: " + error.message);
           }}
         }};
 
@@ -215,7 +217,7 @@ def google_places_autocomplete_input(
         script.async = true;
         script.defer = true;
         script.onerror = function() {{
-          showError("The Google Maps library could not be loaded from Google's servers.");
+          showError("Google Maps JavaScript library could not be loaded from Google's servers.");
         }};
         document.head.appendChild(script);
       </script>
@@ -223,7 +225,12 @@ def google_places_autocomplete_input(
     </html>
     """
 
-    components.html(html_code, height=260, scrolling=False)
+    components.html(
+        html_code,
+        height=260,
+        scrolling=False
+    )
+
 
 # ----------------- New Study Creation Modal Workflow -----------------
 @st.dialog("Create New Cost Segregation Study", width="large")
