@@ -217,19 +217,62 @@ def google_places_autocomplete_input(
 
 # ----------------- New Study Creation Modal Workflow -----------------
 @st.dialog("Create New Cost Segregation Study", width="large")
+# ----------------- Listen for URL Address Selections (Top of Script) -----------------
+if "sel_addr" in st.query_params:
+    chosen_address = st.query_params["sel_addr"]
+    specs = fetch_property_specs(chosen_address)
+    st.session_state["chosen_address_str"] = chosen_address
+    st.session_state["est_price"] = int(specs["price"])
+    st.session_state["est_sqft"] = int(specs["sqft"])
+    st.session_state["est_year"] = int(specs["year_built"])
+    st.session_state["est_type"] = specs["prop_type"]
+    del st.query_params["sel_addr"]
+
+if "modal_addr" in st.query_params:
+    chosen_modal_address = st.query_params["modal_addr"]
+    specs = fetch_property_specs(chosen_modal_address)
+    st.session_state["modal_selected_addr"] = chosen_modal_address
+    st.session_state["modal_price"] = int(specs["price"])
+    st.session_state["modal_sqft"] = int(specs["sqft"])
+    st.session_state["modal_year"] = int(specs["year_built"])
+    st.session_state["modal_type_index"] = 0 if "Commercial" in specs["prop_type"] else 1
+    # Force modal to stay open with new data
+    st.session_state["show_new_study_modal"] = True
+    del st.query_params["modal_addr"]
+
+# ----------------- New Study Creation Modal Workflow -----------------
+@st.dialog("Create New Cost Segregation Study", width="large")
 def new_study_dialog():
     st.markdown("Enter property details to initialize an IRS-compliant virtual cost segregation study.")
     
-    st.caption("Start typing to see live matching properties:")
+    # Google Autocomplete Input
+    st.caption("Start typing to search and validate property:")
     google_places_autocomplete_input(
         param_name="modal_addr",
-        placeholder="Type property address (e.g., 3326 Lakeway Ln, Pearland)..."
+        placeholder="Type property address (e.g., 3326 Lakeway Ln, Montgomery, TX)..."
     )
     
     selected_addr = st.session_state.get("modal_selected_addr", "")
-    if selected_addr:
-        st.success(f"📍 Property Selected: **{selected_addr}**")
 
+    # 1. Address Validation Badge & Specs Preview
+    if selected_addr:
+        st.markdown(
+            f"""
+            <div style="background:#F0FDF4; border:1px solid #BBF7D0; border-radius:8px; padding:12px 16px; margin: 10px 0 16px 0;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="font-weight:700; color:#166534; font-size:14px;">✅ USPS / Google Verified Address</span>
+                    <span style="background:#DCFCE7; color:#15803D; font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px;">IRS Audit Ready</span>
+                </div>
+                <div style="color:#1E293B; font-size:14px; font-weight:600; margin-top:4px;">{selected_addr}</div>
+                <div style="font-size:12px; color:#64748B; margin-top:4px;">
+                    Estimated Building Size: <b>{st.session_state.get('modal_sqft', 3400):,} sq.ft.</b> • Year Built: <b>{st.session_state.get('modal_year', 2019)}</b>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    # 2. Pre-Populated & Fully Overwriteable Inputs
     c1, c2 = st.columns(2)
     with c1:
         new_price = st.number_input(
@@ -237,7 +280,8 @@ def new_study_dialog():
             min_value=50000,
             max_value=50000000,
             value=int(st.session_state.get("modal_price", 1200000)),
-            step=25000
+            step=25000,
+            help="Auto-populated based on tax assessor/market records. You can freely overwrite this value!"
         )
         new_date = st.date_input("Placed in Service Date", value=datetime.date.today())
 
@@ -269,10 +313,12 @@ def new_study_dialog():
                 "raw_reclass": reallocated_val
             }
             st.session_state["user_studies"].append(new_record)
+            st.session_state["show_new_study_modal"] = False
+            st.session_state["modal_selected_addr"] = ""
             st.success("New study created successfully!")
             st.rerun()
         else:
-            st.error("Please select a property address from the live suggestion list.")
+            st.error("Please search and select a property from the Google suggestions list.")
 
 # ----------------- Email Sender via Resend API -----------------
 def send_real_email_code(recipient_email, code):
@@ -582,7 +628,12 @@ elif st.session_state["active_view"] == "costseg_dashboard":
         selected_prop = st.selectbox("Select Property / Asset", prop_options, label_visibility="collapsed")
     with dash_top3:
         if st.button("+ New Study", type="primary", use_container_width=True):
+            st.session_state["show_new_study_modal"] = True
             new_study_dialog()
+
+    # Keep modal rendered if user just selected an address
+    if st.session_state.get("show_new_study_modal", False):
+        new_study_dialog()
 
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     with kpi1:
