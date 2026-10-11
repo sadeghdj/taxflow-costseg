@@ -97,10 +97,10 @@ def fetch_property_specs(address_str):
     }
 
 # ----------------- Live Keystroke Google-Style Autocomplete Component -----------------
-def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start typing address (e.g. 3326 Lakeway Ln, Pearland)..."):
+def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start typing address (e.g. 160 Church Road, North Wales, PA 19454)..."):
     """
-    Official Google Places Keystroke Autocomplete.
-    Uses Google Maps Places API for 100% accurate US rooftop and house-number matching.
+    Official Google Places (New) 2024 Keystroke Autocomplete.
+    Uses Google's PlaceAutocompleteElement (fully compatible with Places API New).
     """
     gkey = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
 
@@ -111,22 +111,10 @@ def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start t
     <meta charset="utf-8">
     <style>
       * {{ box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
-      body {{ margin: 0; padding: 0; background: transparent; }}
-      .pac-container {{
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-        border-radius: 8px !important;
-        border: 1px solid #CBD5E1 !important;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.18) !important;
-        margin-top: 4px !important;
-        z-index: 999999 !important;
-      }}
-      .pac-item {{
-        padding: 8px 12px !important;
-        font-size: 14px !important;
-        cursor: pointer !important;
-      }}
-      .pac-item:hover {{
-        background-color: #F8FAFC !important;
+      body {{ margin: 0; padding: 0; background: transparent; overflow: visible; }}
+      .search-box {{ width: 100%; }}
+      gmp-place-autocomplete {{
+        width: 100%;
       }}
       input {{
         width: 100%;
@@ -139,39 +127,52 @@ def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start t
         outline: none;
       }}
       input:focus {{ border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }}
+      .pac-container {{
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        border-radius: 8px !important;
+        border: 1px solid #CBD5E1 !important;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.18) !important;
+        z-index: 999999 !important;
+      }}
     </style>
-    <!-- Load Official Google Maps Places Library -->
-    <script src="https://maps.googleapis.com/maps/api/js?key={gkey}&libraries=places"></script>
+    <!-- Load Google Maps JavaScript API with v=weekly and libraries=places -->
+    <script>
+      (g=>{{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={{}});var d=b.maps||(b.maps={{}}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${{c}}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))}})({{
+        key: "{gkey}",
+        v: "weekly"
+      }});
+    </script>
     </head>
     <body>
-      <input id="autocomplete" type="text" placeholder="{placeholder}" autocomplete="off">
+      <div class="search-box">
+        <input id="pac-input" type="text" placeholder="{placeholder}" autocomplete="off">
+      </div>
 
       <script>
-        function initAutocomplete() {{
-          const input = document.getElementById('autocomplete');
-          // Bias search to US addresses
+        async function init() {{
+          const {{ Autocomplete }} = await google.maps.importLibrary("places");
+          const input = document.getElementById("pac-input");
+          
           const options = {{
             componentRestrictions: {{ country: "us" }},
-            fields: ["formatted_address", "address_components", "geometry"],
+            fields: ["formatted_address", "geometry"],
             types: ["address"]
           }};
 
-          const autocomplete = new google.maps.places.Autocomplete(input, options);
+          const autocomplete = new Autocomplete(input, options);
 
-          autocomplete.addListener('place_changed', function() {{
+          autocomplete.addListener("place_changed", () => {{
             const place = autocomplete.getPlace();
-            if (!place.formatted_address) return;
+            if (!place || !place.formatted_address) return;
 
             const fullAddress = place.formatted_address;
-            
-            // Pass confirmed address back to Streamlit URL query parameter for instant rerun
             const parentUrl = new URL(window.parent.location.href);
-            parentUrl.searchParams.set('{param_name}', fullAddress);
+            parentUrl.searchParams.set("{param_name}", fullAddress);
             window.parent.location.href = parentUrl.toString();
           }});
         }}
 
-        window.onload = initAutocomplete;
+        init();
       </script>
     </body>
     </html>
