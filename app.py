@@ -35,7 +35,7 @@ if "temp_email" not in st.session_state:
 if "show_login_dialog" not in st.session_state:
     st.session_state["show_login_dialog"] = False
 
-# Portfolio Studies
+# Portfolio Studies: Start completely clean from scratch
 if "user_studies" not in st.session_state:
     st.session_state["user_studies"] = []
 
@@ -58,6 +58,8 @@ if "modal_type_index" not in st.session_state:
     st.session_state["modal_type_index"] = 0
 if "modal_selected_addr" not in st.session_state:
     st.session_state["modal_selected_addr"] = ""
+if "show_new_study_modal" not in st.session_state:
+    st.session_state["show_new_study_modal"] = False
 
 # ----------------- Video Modal Dialog -----------------
 @st.dialog(" ", width="large")
@@ -97,127 +99,7 @@ def fetch_property_specs(address_str):
         "prop_type": "Commercial / Multi-Family" if ("St" in address_str or "Ave" in address_str or "Pkwy" in address_str) else "Residential Multi-Family"
     }
 
-# ----------------- Official Google Places Autocomplete Component with Error Catcher -----------------
-def google_places_autocomplete_input(
-    param_name="sel_addr",
-    placeholder="Start typing address (e.g. 3326 Lakeway Ln, Pearland)..."
-):
-    gkey = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
-
-    if not gkey:
-        st.error("Google Maps API key is not configured in Streamlit Cloud Secrets.")
-        return
-
-    safe_key = json.dumps(gkey)
-    safe_param = json.dumps(param_name)
-
-    html_code = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <style>
-        * {{
-          box-sizing: border-box;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        }}
-        html, body {{
-          margin: 0;
-          padding: 0;
-          background: transparent;
-          overflow: visible;
-        }}
-        .autocomplete-wrapper {{
-          width: 100%;
-        }}
-        /* Google Places (New) Web Component styling */
-        gmp-place-autocomplete {{
-          width: 100%;
-          display: block;
-        }}
-        #error-message {{
-          display: none;
-          margin-top: 8px;
-          padding: 10px;
-          color: #991B1B;
-          background: #FEF2F2;
-          border: 1px solid #FECACA;
-          border-radius: 6px;
-          font-size: 13px;
-        }}
-      </style>
-      <!-- Load Google Maps JavaScript API with Places (New) Library -->
-      <script>
-        (g=>{{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={{}});var d=b.maps||(b.maps={{}}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${{c}}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))}})({{
-          key: {safe_key},
-          v: "weekly"
-        }});
-      </script>
-    </head>
-    <body>
-      <div class="autocomplete-wrapper" id="container"></div>
-      <div id="error-message"></div>
-
-      <script>
-        const queryParameter = {safe_param};
-
-        function showError(message) {{
-          const errorBox = document.getElementById("error-message");
-          errorBox.textContent = message;
-          errorBox.style.display = "block";
-        }}
-
-        window.gm_authFailure = function() {{
-          showError("Google Maps authentication failed. Please verify API restrictions and billing.");
-        }};
-
-        async function initAutocomplete() {{
-          try {{
-            // Import modern 2024 Places (New) library
-            const {{ PlaceAutocompleteElement }} = await google.maps.importLibrary("places");
-            
-            const autocomplete = new PlaceAutocompleteElement({{
-              componentRestrictions: {{ country: ["us"] }}
-            }});
-
-            const container = document.getElementById("container");
-            container.appendChild(autocomplete);
-
-            // Listen for Place Selection on Places API (New)
-            autocomplete.addEventListener("gmp-placeselect", async ({{ place }}) => {{
-              await place.fetchFields({{
-                fields: ["formattedAddress", "location"]
-              }});
-
-              if (!place.formattedAddress) return;
-
-              const parentUrl = new URL(window.parent.location.href);
-              parentUrl.searchParams.set(queryParameter, place.formattedAddress);
-              window.parent.location.href = parentUrl.toString();
-            }});
-
-          }} catch (err) {{
-            console.error("Initialization error:", err);
-            showError("Places (New) initialization error: " + err.message);
-          }}
-        }}
-
-        initAutocomplete();
-      </script>
-    </body>
-    </html>
-    """
-
-    components.html(
-        html_code,
-        height=260,
-        scrolling=False
-    )
-
-
-# ----------------- New Study Creation Modal Workflow -----------------
-@st.dialog("Create New Cost Segregation Study", width="large")
-# ----------------- Listen for URL Address Selections (Top of Script) -----------------
+# ----------------- Listen for URL Address Selections (Processed at Top) -----------------
 if "sel_addr" in st.query_params:
     chosen_address = st.query_params["sel_addr"]
     specs = fetch_property_specs(chosen_address)
@@ -236,25 +118,153 @@ if "modal_addr" in st.query_params:
     st.session_state["modal_sqft"] = int(specs["sqft"])
     st.session_state["modal_year"] = int(specs["year_built"])
     st.session_state["modal_type_index"] = 0 if "Commercial" in specs["prop_type"] else 1
-    # Force modal to stay open with new data
     st.session_state["show_new_study_modal"] = True
     del st.query_params["modal_addr"]
+
+# ----------------- Clean Google Places Autocomplete Component -----------------
+def google_places_autocomplete_input(
+    param_name="sel_addr",
+    placeholder="Start typing an address (e.g. 3326 Lakeway Ln, Pearland)..."
+):
+    gkey = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
+
+    if not gkey:
+        st.error("Google Maps API key is not configured in Streamlit Cloud Secrets.")
+        return
+
+    safe_key = json.dumps(gkey)
+    safe_param = json.dumps(param_name)
+    safe_placeholder = json.dumps(placeholder)
+
+    html_code = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        * {{
+          box-sizing: border-box;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }}
+        html, body {{
+          margin: 0;
+          padding: 0;
+          background: transparent;
+          overflow: visible;
+        }}
+        #pac-input {{
+          width: 100%;
+          padding: 11px 14px;
+          font-size: 15px;
+          border: 1px solid #CBD5E1;
+          border-radius: 8px;
+          background: #FFFFFF;
+          color: #0F172A;
+          outline: none;
+        }}
+        #pac-input:focus {{
+          border-color: #2563EB;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }}
+        .pac-container {{
+          border-radius: 8px !important;
+          border: 1px solid #CBD5E1 !important;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.18) !important;
+          z-index: 999999 !important;
+        }}
+        #error-message {{
+          display: none;
+          margin-top: 8px;
+          padding: 10px;
+          color: #991B1B;
+          background: #FEF2F2;
+          border: 1px solid #FECACA;
+          border-radius: 6px;
+          font-size: 13px;
+          line-height: 1.4;
+        }}
+      </style>
+    </head>
+    <body>
+      <input
+        id="pac-input"
+        type="text"
+        placeholder={safe_placeholder}
+        autocomplete="off"
+      >
+      <div id="error-message"></div>
+
+      <script>
+        const apiKey = {safe_key};
+        const queryParameter = {safe_param};
+
+        function showError(message) {{
+          const errorBox = document.getElementById("error-message");
+          errorBox.textContent = message;
+          errorBox.style.display = "block";
+        }}
+
+        window.gm_authFailure = function() {{
+          showError(
+            "Google Maps Authentication Failed: Please check your Google Cloud project billing and enabled APIs."
+          );
+        }};
+
+        window.initializeAutocomplete = function() {{
+          try {{
+            const input = document.getElementById("pac-input");
+            const autocomplete = new google.maps.places.Autocomplete(input, {{
+              componentRestrictions: {{ country: "us" }},
+              fields: ["formatted_address", "geometry"],
+              types: ["address"]
+            }});
+
+            autocomplete.addListener("place_changed", function() {{
+              const place = autocomplete.getPlace();
+              if (!place || !place.formatted_address) {{
+                showError("Please select a valid address from the suggestion list.");
+                return;
+              }}
+              const parentUrl = new URL(window.parent.location.href);
+              parentUrl.searchParams.set(queryParameter, place.formatted_address);
+              window.parent.location.href = parentUrl.toString();
+            }});
+          }} catch (error) {{
+            showError("Places initialization error: " + error.message);
+          }}
+        }};
+
+        const script = document.createElement("script");
+        script.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(apiKey) + "&libraries=places&callback=initializeAutocomplete&loading=async";
+        script.async = true;
+        script.defer = true;
+        script.onerror = function() {{
+          showError("Google Maps JavaScript library could not be loaded from Google's servers.");
+        }};
+        document.head.appendChild(script);
+      </script>
+    </body>
+    </html>
+    """
+
+    components.html(
+        html_code,
+        height=260,
+        scrolling=False
+    )
 
 # ----------------- New Study Creation Modal Workflow -----------------
 @st.dialog("Create New Cost Segregation Study", width="large")
 def new_study_dialog():
     st.markdown("Enter property details to initialize an IRS-compliant virtual cost segregation study.")
     
-    # Google Autocomplete Input
     st.caption("Start typing to search and validate property:")
     google_places_autocomplete_input(
         param_name="modal_addr",
-        placeholder="Type property address (e.g., 3326 Lakeway Ln, Montgomery, TX)..."
+        placeholder="Type property address (e.g., 3326 Lakeway Ln, Pearland)..."
     )
     
     selected_addr = st.session_state.get("modal_selected_addr", "")
-
-    # 1. Address Validation Badge & Specs Preview
     if selected_addr:
         st.markdown(
             f"""
@@ -272,7 +282,6 @@ def new_study_dialog():
             unsafe_allow_html=True
         )
 
-    # 2. Pre-Populated & Fully Overwriteable Inputs
     c1, c2 = st.columns(2)
     with c1:
         new_price = st.number_input(
@@ -545,25 +554,6 @@ with nav_right:
             st.session_state["active_view"] = "landing"
             st.rerun()
 
-# ----------------- Listen for URL Address Selections -----------------
-if "sel_addr" in st.query_params:
-    chosen_address = st.query_params["sel_addr"]
-    specs = fetch_property_specs(chosen_address)
-    st.session_state["chosen_address_str"] = chosen_address
-    st.session_state["est_price"] = int(specs["price"])
-    st.session_state["est_sqft"] = int(specs["sqft"])
-    st.session_state["est_year"] = int(specs["year_built"])
-    st.session_state["est_type"] = specs["prop_type"]
-    del st.query_params["sel_addr"]
-
-if "modal_addr" in st.query_params:
-    chosen_modal_address = st.query_params["modal_addr"]
-    specs = fetch_property_specs(chosen_modal_address)
-    st.session_state["modal_selected_addr"] = chosen_modal_address
-    st.session_state["modal_price"] = int(specs["price"])
-    st.session_state["modal_type_index"] = 0 if "Commercial" in specs["prop_type"] else 1
-    del st.query_params["modal_addr"]
-
 # ==============================================================================
 # VIEW 1: RESIDENT / TENANT PORTAL
 # ==============================================================================
@@ -631,7 +621,6 @@ elif st.session_state["active_view"] == "costseg_dashboard":
             st.session_state["show_new_study_modal"] = True
             new_study_dialog()
 
-    # Keep modal rendered if user just selected an address
     if st.session_state.get("show_new_study_modal", False):
         new_study_dialog()
 
