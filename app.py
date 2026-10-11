@@ -5,6 +5,7 @@ import datetime
 import pandas as pd
 import os
 import random
+import json
 
 # ----------------- Page Setup -----------------
 st.set_page_config(
@@ -34,7 +35,7 @@ if "temp_email" not in st.session_state:
 if "show_login_dialog" not in st.session_state:
     st.session_state["show_login_dialog"] = False
 
-# Portfolio Studies: Start completely clean from scratch
+# Portfolio Studies
 if "user_studies" not in st.session_state:
     st.session_state["user_studies"] = []
 
@@ -96,81 +97,133 @@ def fetch_property_specs(address_str):
         "prop_type": "Commercial / Multi-Family" if ("St" in address_str or "Ave" in address_str or "Pkwy" in address_str) else "Residential Multi-Family"
     }
 
-# ----------------- Official Google Places (New) Autocomplete Component -----------------
-def google_places_autocomplete_input(param_name="sel_addr", placeholder="Start typing address (e.g. 160 Church Road, North Wales, PA 19454)..."):
+# ----------------- Official Google Places Autocomplete Component with Error Catcher -----------------
+def google_places_autocomplete_input(
+    param_name="sel_addr",
+    placeholder="Start typing an address (e.g., 3326 Lakeway Ln, Pearland)..."
+):
     gkey = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
+
+    if not gkey:
+        st.error("Google Maps API key is not configured in Streamlit Cloud Secrets.")
+        return
+
+    safe_key = json.dumps(gkey)
+    safe_param = json.dumps(param_name)
+    safe_placeholder = json.dumps(placeholder)
 
     html_code = f"""
     <!DOCTYPE html>
     <html>
     <head>
-    <meta charset="utf-8">
-    <style>
-      * {{ box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
-      body {{ margin: 0; padding: 0; background: transparent; overflow: visible; }}
-      .search-box {{ width: 100%; position: relative; }}
-      input {{
-        width: 100%;
-        padding: 11px 14px;
-        font-size: 15px;
-        border: 1px solid #CBD5E1;
-        border-radius: 8px;
-        background: #FFFFFF;
-        color: #0F172A;
-        outline: none;
-      }}
-      input:focus {{ border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }}
-      .pac-container {{
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-        border-radius: 8px !important;
-        border: 1px solid #CBD5E1 !important;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.18) !important;
-        z-index: 999999 !important;
-      }}
-    </style>
-    <!-- Load Google Maps JavaScript API with v=weekly and libraries=places -->
-    <script>
-      (g=>{{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={{}});var d=b.maps||(b.maps={{}}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${{c}}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))}})({{
-        key: "{gkey}",
-        v: "weekly"
-      }});
-    </script>
+      <meta charset="utf-8">
+      <style>
+        * {{
+          box-sizing: border-box;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }}
+        html, body {{
+          margin: 0;
+          padding: 0;
+          background: transparent;
+          overflow: visible;
+        }}
+        #pac-input {{
+          width: 100%;
+          padding: 11px 14px;
+          font-size: 15px;
+          border: 1px solid #CBD5E1;
+          border-radius: 8px;
+          background: #FFFFFF;
+          color: #0F172A;
+          outline: none;
+        }}
+        #pac-input:focus {{
+          border-color: #2563EB;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }}
+        .pac-container {{
+          border-radius: 8px !important;
+          border: 1px solid #CBD5E1 !important;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.18) !important;
+          z-index: 999999 !important;
+        }}
+        #error-message {{
+          display: none;
+          margin-top: 8px;
+          padding: 8px 10px;
+          color: #991B1B;
+          background: #FEF2F2;
+          border: 1px solid #FECACA;
+          border-radius: 6px;
+          font-size: 12px;
+        }}
+      </style>
     </head>
     <body>
-      <div class="search-box">
-        <input id="pac-input" type="text" placeholder="{placeholder}" autocomplete="off">
-      </div>
+      <input
+        id="pac-input"
+        type="text"
+        placeholder={safe_placeholder}
+        autocomplete="off"
+      >
+      <div id="error-message"></div>
 
       <script>
-        async function init() {{
-          const {{ Autocomplete }} = await google.maps.importLibrary("places");
-          const input = document.getElementById("pac-input");
-          
-          const options = {{
-            componentRestrictions: {{ country: "us" }},
-            fields: ["formatted_address", "geometry"],
-            types: ["address"]
-          }};
+        const apiKey = {safe_key};
+        const queryParameter = {safe_param};
 
-          const autocomplete = new Autocomplete(input, options);
-
-          autocomplete.addListener("place_changed", () => {{
-            const place = autocomplete.getPlace();
-            if (!place || !place.formatted_address) return;
-
-            const fullAddress = place.formatted_address;
-            const parentUrl = new URL(window.parent.location.href);
-            parentUrl.searchParams.set("{param_name}", fullAddress);
-            window.parent.location.href = parentUrl.toString();
-          }});
+        function showError(message) {{
+          const errorBox = document.getElementById("error-message");
+          errorBox.textContent = message;
+          errorBox.style.display = "block";
         }}
 
-        init();
+        window.gm_authFailure = function() {{
+          showError(
+            "Google Maps authentication failed: Please verify that Billing is active, " +
+            "and that both 'Places API' and 'Maps JavaScript API' are enabled in this project."
+          );
+        }};
+
+        window.initializeAutocomplete = function() {{
+          try {{
+            const input = document.getElementById("pac-input");
+            const autocomplete = new google.maps.places.Autocomplete(input, {{
+              componentRestrictions: {{ country: "us" }},
+              fields: ["formatted_address", "geometry"],
+              types: ["address"]
+            }});
+
+            autocomplete.addListener("place_changed", function() {{
+              const place = autocomplete.getPlace();
+              if (!place || !place.formatted_address) {{
+                showError("Please select a property from the suggestion list.");
+                return;
+              }}
+              const parentUrl = new URL(window.parent.location.href);
+              parentUrl.searchParams.set(queryParameter, place.formatted_address);
+              window.parent.location.href = parentUrl.toString();
+            }});
+          }} catch (error) {{
+            showError("Google Places could not initialize: " + error.message);
+          }}
+        }};
+
+        const script = document.createElement("script");
+        script.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(apiKey) + "&libraries=places&callback=initializeAutocomplete&loading=async";
+        script.async = true;
+        script.defer = true;
+        script.onerror = function() {{
+          showError("The Google Maps library could not be loaded from Google's servers.");
+        }};
+        document.head.appendChild(script);
       </script>
     </body>
     </html>
     """
-    components.html(html_code, height=260)
+
+    components.html(html_code, height=260, scrolling=False)
 
 # ----------------- New Study Creation Modal Workflow -----------------
 @st.dialog("Create New Cost Segregation Study", width="large")
@@ -178,7 +231,10 @@ def new_study_dialog():
     st.markdown("Enter property details to initialize an IRS-compliant virtual cost segregation study.")
     
     st.caption("Start typing to see live matching properties:")
-    google_places_autocomplete_input(param_name="modal_addr", placeholder="Type property address (e.g., 6733 Main St)...")
+    google_places_autocomplete_input(
+        param_name="modal_addr",
+        placeholder="Type property address (e.g., 3326 Lakeway Ln, Pearland)..."
+    )
     
     selected_addr = st.session_state.get("modal_selected_addr", "")
     if selected_addr:
@@ -392,6 +448,7 @@ def login_dialog():
                     st.session_state["otp_step"] = "input_email"
                     st.session_state["show_login_dialog"] = False
 
+                    # Invisible routing: automatically detects tenant vs investor
                     roster_df = load_tenant_roster()
                     match = roster_df[roster_df["email_clean"] == cleaned_email]
 
@@ -664,7 +721,10 @@ else:
         st.markdown("<h3 style='text-align:center; margin-top:0;'>Instant Savings Estimate</h3>", unsafe_allow_html=True)
 
         st.caption("Start typing to see live matching properties:")
-        google_places_autocomplete_input(param_name="sel_addr", placeholder="Start typing address (e.g. 160 Church Road)...")
+        google_places_autocomplete_input(
+            param_name="sel_addr",
+            placeholder="Start typing address (e.g. 3326 Lakeway Ln, Pearland)..."
+        )
 
         if st.session_state.get("chosen_address_str"):
             st.success(f"📍 Property Selected: **{st.session_state['chosen_address_str']}**")
