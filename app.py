@@ -428,9 +428,10 @@ def complete_login(email: str):
 def restore_session():
     if st.session_state.get("user_email"):
         return
-    token = st.query_params.get("s")
-    if not token:
+    if "s" not in st.query_params:
         return
+    token = st.query_params["s"]
+
     row = db_one("SELECT email, expires_at FROM sessions WHERE token_hash=:h", h=_sha(token))
     if row and row["expires_at"] > now_iso():
         set_signed_in(row["email"])
