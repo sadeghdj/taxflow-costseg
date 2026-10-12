@@ -124,17 +124,9 @@ if "modal_addr" in st.query_params:
 # ----------------- Clean Google Places Autocomplete Component -----------------
 def google_places_autocomplete_input(
     param_name="sel_addr",
-    placeholder="Start typing an address (e.g. 3326 Lakeway Ln, Pearland)..."
+    placeholder="Start typing address (e.g. 3326 Lakeway Ln, Pearland)..."
 ):
     gkey = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
-
-    if not gkey:
-        st.error("Google Maps API key is not configured in Streamlit Cloud Secrets.")
-        return
-
-    safe_key = json.dumps(gkey)
-    safe_param = json.dumps(param_name)
-    safe_placeholder = json.dumps(placeholder)
 
     html_code = f"""
     <!DOCTYPE html>
@@ -152,7 +144,7 @@ def google_places_autocomplete_input(
           background: transparent;
           overflow: visible;
         }}
-        #pac-input {{
+        input {{
           width: 100%;
           padding: 11px 14px;
           font-size: 15px;
@@ -162,86 +154,54 @@ def google_places_autocomplete_input(
           color: #0F172A;
           outline: none;
         }}
-        #pac-input:focus {{
+        input:focus {{
           border-color: #2563EB;
           box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
         }}
         .pac-container {{
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
           border-radius: 8px !important;
           border: 1px solid #CBD5E1 !important;
           box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.18) !important;
           z-index: 999999 !important;
         }}
-        #error-message {{
-          display: none;
-          margin-top: 8px;
-          padding: 10px;
-          color: #991B1B;
-          background: #FEF2F2;
-          border: 1px solid #FECACA;
-          border-radius: 6px;
-          font-size: 13px;
-          line-height: 1.4;
+        .pac-item {{
+          padding: 8px 12px !important;
+          font-size: 14px !important;
+          cursor: pointer !important;
+        }}
+        .pac-item:hover {{
+          background-color: #F8FAFC !important;
         }}
       </style>
+      <script src="https://maps.googleapis.com/maps/api/js?key={gkey}&libraries=places"></script>
     </head>
     <body>
-      <input
-        id="pac-input"
-        type="text"
-        placeholder={safe_placeholder}
-        autocomplete="off"
-      >
-      <div id="error-message"></div>
+      <input id="pac-input" type="text" placeholder="{placeholder}" autocomplete="off">
 
       <script>
-        const apiKey = {safe_key};
-        const queryParameter = {safe_param};
+        function initAutocomplete() {{
+          const input = document.getElementById('pac-input');
+          const options = {{
+            componentRestrictions: {{ country: "us" }},
+            fields: ["formatted_address", "geometry"],
+            types: ["address"]
+          }};
 
-        function showError(message) {{
-          const errorBox = document.getElementById("error-message");
-          errorBox.textContent = message;
-          errorBox.style.display = "block";
+          const autocomplete = new google.maps.places.Autocomplete(input, options);
+
+          autocomplete.addListener('place_changed', function() {{
+            const place = autocomplete.getPlace();
+            if (!place || !place.formatted_address) return;
+
+            const fullAddress = place.formatted_address;
+            const parentUrl = new URL(window.parent.location.href);
+            parentUrl.searchParams.set('{param_name}', fullAddress);
+            window.parent.location.href = parentUrl.toString();
+          }});
         }}
 
-        window.gm_authFailure = function() {{
-          showError(
-            "Google Maps Authentication Failed: Please check your Google Cloud project billing and enabled APIs."
-          );
-        }};
-
-        window.initializeAutocomplete = function() {{
-          try {{
-            const input = document.getElementById("pac-input");
-            const autocomplete = new google.maps.places.Autocomplete(input, {{
-              componentRestrictions: {{ country: "us" }},
-              fields: ["formatted_address", "geometry"],
-              types: ["address"]
-            }});
-
-            autocomplete.addListener("place_changed", function() {{
-              const place = autocomplete.getPlace();
-              if (!place || !place.formatted_address) {{
-                showError("Please select a valid address from the suggestion list.");
-                return;
-              }}
-              const parentUrl = new URL(window.parent.location.href);
-              parentUrl.searchParams.set(queryParameter, place.formatted_address);
-              window.parent.location.href = parentUrl.toString();
-            }});
-          }} catch (error) {{
-            showError("Places initialization error: " + error.message);
-          }}
-        }};
-
-        const script = document.createElement("script");
-        script.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(apiKey) + "&libraries=places&callback=initializeAutocomplete&loading=async";
-        script.async = true;
-        script.defer = true;
-        script.onerror = function() {{
-          showError("Google Maps JavaScript library could not be loaded from Google's servers.");
-        }};
-        document.head.appendChild(script);
+        window.onload = initAutocomplete;
       </script>
     </body>
     </html>
