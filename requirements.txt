@@ -1,3 +1,6 @@
-streamlit>=1.35.0
-requests>=2.31.0
-pandas>=2.0.0
+streamlit==1.45.1
+pandas>=2.0
+requests>=2.31
+SQLAlchemy>=2.0
+psycopg2-binary>=2.9
+altair>=5.0
