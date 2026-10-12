@@ -440,8 +440,8 @@ def restore_session():
 
 
 def sign_out():
-    token = st.query_params.get("s")
-    if token:
+    if "s" in st.query_params:
+        token = st.query_params["s"]
         db_exec("DELETE FROM sessions WHERE token_hash=:h", h=_sha(token))
         del st.query_params["s"]
     for k in ["user_email", "roles", "otp", "login_step"]:
