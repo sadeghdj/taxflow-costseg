@@ -416,8 +416,8 @@ def complete_login(email: str):
     expires = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=SESSION_DAYS)).isoformat(timespec="seconds")
     db_exec("INSERT INTO sessions (token_hash, email, expires_at) VALUES (:h, :e, :x)",
             h=_sha(token), e=email, x=expires)
-    st.query_params["s"] = token
-    set_signed_in(email)
+            st.query_params.from_dict({"s": token})
+            set_signed_in(email)
     pending = st.session_state.pop("pending_study", None)
     if pending:
         sid = insert_study(email, pending, tier="Quick Estimate", status="Estimate")
